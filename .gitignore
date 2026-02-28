@@ -1,0 +1,65 @@
+# Python bytecode and extensions
+__pycache__/
+*.py[cod]
+*.so
+_ext/
+
+# Python build and packaging
+build/
+dist/
+wheels/
+*.egg-info/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing, linting, and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and runtime files
+*.log
+
+# Model artifacts and experiment outputs
+exp/
+outputs/
+checkpoints/
+_DEL_/
+events.out.tfevents.*
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.npy
+*.npz
+
+# Large local datasets (keep dataset docs/scripts tracked)
+datasets/coco/
+datasets/cocosplit/
+datasets/VOC2007/
+datasets/VOC2012/
+datasets/vocsplit/
