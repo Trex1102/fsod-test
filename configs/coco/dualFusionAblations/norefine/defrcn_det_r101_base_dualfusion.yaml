@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_det_r101_base_dualfusion.yaml"
+MODEL:
+  DUAL_FUSION:
+    USE_REFINE: False

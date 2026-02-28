@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_gfsod_r101_novelx_5shot_seedx_adapter.yaml"
+MODEL:
+  BRANCH_ADAPTER:
+    GATE_INIT: 1.0

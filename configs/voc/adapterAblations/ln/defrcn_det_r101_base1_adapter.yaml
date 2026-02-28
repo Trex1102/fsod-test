@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_det_r101_base1_adapter.yaml"
+MODEL:
+  BRANCH_ADAPTER:
+    NORM: "LN"

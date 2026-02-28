@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_fsod_r101_novelx_10shot_seedx_adapter.yaml"
+MODEL:
+  BRANCH_ADAPTER:
+    ROI_FEATURES: []

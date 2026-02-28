@@ -8,6 +8,8 @@ from detectron2.modeling.postprocessing import detector_postprocess
 from detectron2.modeling.proposal_generator import build_proposal_generator
 from .build import META_ARCH_REGISTRY
 from .gdl import decouple_layer, AffineLayer
+from .dual_fusion import DualFusionNeck
+from .branch_adapter import BranchAdapter
 from defrcn.modeling.roi_heads import build_roi_heads
 
 __all__ = ["GeneralizedRCNN"]
@@ -23,11 +25,37 @@ class GeneralizedRCNN(nn.Module):
         self.device = torch.device(cfg.MODEL.DEVICE)
         self.backbone = build_backbone(cfg)
         self._SHAPE_ = self.backbone.output_shape()
+        self.rpn_in_features = tuple(cfg.MODEL.RPN.IN_FEATURES)
+        self.roi_in_features = tuple(cfg.MODEL.ROI_HEADS.IN_FEATURES)
+        if len(self.rpn_in_features) == 0 or len(self.roi_in_features) == 0:
+            raise ValueError("MODEL.RPN.IN_FEATURES and MODEL.ROI_HEADS.IN_FEATURES must be non-empty.")
+        self.rpn_affine_feature = self.rpn_in_features[0]
+        self.roi_affine_feature = self.roi_in_features[0]
         self.proposal_generator = build_proposal_generator(cfg, self._SHAPE_)
         self.roi_heads = build_roi_heads(cfg, self._SHAPE_)
         self.normalizer = self.normalize_fn()
-        self.affine_rpn = AffineLayer(num_channels=self._SHAPE_['res4'].channels, bias=True)
-        self.affine_rcnn = AffineLayer(num_channels=self._SHAPE_['res4'].channels, bias=True)
+        self.affine_rpn = AffineLayer(num_channels=self._SHAPE_[self.rpn_affine_feature].channels, bias=True)
+        self.affine_rcnn = AffineLayer(num_channels=self._SHAPE_[self.roi_affine_feature].channels, bias=True)
+        self.dual_fusion = None
+        self.fusion_out_feature = None
+        if cfg.MODEL.DUAL_FUSION.ENABLE:
+            self.dual_fusion = DualFusionNeck(cfg, self._SHAPE_)
+            self.fusion_out_feature = cfg.MODEL.DUAL_FUSION.OUT_FEATURE
+            if self.fusion_out_feature not in self.rpn_in_features:
+                raise ValueError(
+                    "MODEL.DUAL_FUSION.OUT_FEATURE must be in MODEL.RPN.IN_FEATURES, got '{}'.".format(
+                        self.fusion_out_feature
+                    )
+                )
+            if self.fusion_out_feature not in self.roi_in_features:
+                raise ValueError(
+                    "MODEL.DUAL_FUSION.OUT_FEATURE must be in MODEL.ROI_HEADS.IN_FEATURES, got '{}'.".format(
+                        self.fusion_out_feature
+                    )
+                )
+        self.branch_adapter = None
+        if cfg.MODEL.BRANCH_ADAPTER.ENABLE:
+            self.branch_adapter = BranchAdapter(cfg, self._SHAPE_)
         self.to(self.device)
 
         if cfg.MODEL.BACKBONE.FREEZE:
@@ -71,17 +99,43 @@ class GeneralizedRCNN(nn.Module):
 
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
+        features_rpn = features
+        features_rcnn = features
+        if self.dual_fusion is not None:
+            fused_rpn, fused_roi = self.dual_fusion(features)
+            features_rpn = dict(features)
+            features_rcnn = dict(features)
+            features_rpn[self.fusion_out_feature] = fused_rpn
+            features_rcnn[self.fusion_out_feature] = fused_roi
+        if self.branch_adapter is not None:
+            features_rpn, features_rcnn = self.branch_adapter(features_rpn, features_rcnn)
 
-        features_de_rpn = features
+        features_de_rpn = features_rpn
         if self.cfg.MODEL.RPN.ENABLE_DECOUPLE:
             scale = self.cfg.MODEL.RPN.BACKWARD_SCALE
-            features_de_rpn = {k: self.affine_rpn(decouple_layer(features[k], scale)) for k in features}
+            features_de_rpn = {}
+            for k, v in features_rpn.items():
+                if k in self.rpn_in_features:
+                    x = decouple_layer(v, scale)
+                    if k == self.rpn_affine_feature:
+                        x = self.affine_rpn(x)
+                    features_de_rpn[k] = x
+                else:
+                    features_de_rpn[k] = v
         proposals, proposal_losses = self.proposal_generator(images, features_de_rpn, gt_instances)
 
-        features_de_rcnn = features
+        features_de_rcnn = features_rcnn
         if self.cfg.MODEL.ROI_HEADS.ENABLE_DECOUPLE:
             scale = self.cfg.MODEL.ROI_HEADS.BACKWARD_SCALE
-            features_de_rcnn = {k: self.affine_rcnn(decouple_layer(features[k], scale)) for k in features}
+            features_de_rcnn = {}
+            for k, v in features_rcnn.items():
+                if k in self.roi_in_features:
+                    x = decouple_layer(v, scale)
+                    if k == self.roi_affine_feature:
+                        x = self.affine_rcnn(x)
+                    features_de_rcnn[k] = x
+                else:
+                    features_de_rcnn[k] = v
         results, detector_losses = self.roi_heads(images, features_de_rcnn, proposals, gt_instances)
 
         return proposal_losses, detector_losses, results, images.image_sizes

@@ -1,0 +1,4 @@
+_BASE_: "../defrcn_det_r101_base3.yaml"
+MODEL:
+  VAE_FSOD:
+    ENABLE: False

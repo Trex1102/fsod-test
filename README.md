@@ -87,6 +87,291 @@ For ease of training and evaluation over multiple runs, we integrate the whole p
   ```
 * Please read the details of few-shot object detection pipeline in `run_*.sh`, you need change `IMAGENET_PRETRAIN*` to your path.
 
+### Dual-Fusion Ablations (Base -> Fine-tuning)
+
+This repo now includes a folderized ablation matrix under:
+
+```text
+configs/coco/dualFusionAblations/
+configs/voc/dualFusionAblations/
+```
+
+Each folder is one ablation setting (`baseline`, `norefine`, `roi_res5`, `origweights`, `rpn_no_res5`, `roi_res4_only`, `light512`, `lr_0p005`, `lr_0p0025`) and contains both base-stage and shot-stage configs.
+
+What each dual-fusion ablation tests:
+
+| Ablation folder | Main change vs `baseline` | What it tests |
+|---|---|---|
+| `baseline` | `USE_REFINE=True`, `ALIGN_CHANNELS=1024`, branch-biased init (`RPN=[2.0,1.5,0.5]`, `ROI=[2.0,1.5,-3.0]`), `RPN_LEVELS=[res3,res4,res5]`, `ROI_LEVELS=[res3,res4]` | Default dual-fusion setting |
+| `norefine` | `USE_REFINE=False` | Effect of removing post-fusion 3x3 refinement |
+| `roi_res5` | `ROI_LEVELS=[res3,res4,res5]`, `ROI_INIT_LOGITS=[2.0,1.5,0.5]` | Effect of adding `res5` into ROI fusion |
+| `origweights` | `RPN_INIT_LOGITS=[2,1,0]`, `ROI_INIT_LOGITS=[0,1,2]`, both branches use `res3/res4/res5` | Original semantic-bias weighting variant |
+| `rpn_no_res5` | `RPN_LEVELS=[res3,res4]` (drops `res5`) | How much RPN depends on high-level `res5` input |
+| `roi_res4_only` | `ROI_LEVELS=[res4]` | ROI classification/regression with only `res4` |
+| `light512` | `ALIGN_CHANNELS=512` | Lighter neck capacity / compute |
+| `lr_0p005` | `SOLVER.BASE_LR=0.005` | LR sensitivity (milder update) |
+| `lr_0p0025` | `SOLVER.BASE_LR=0.0025` | LR sensitivity (more conservative update) |
+
+Use `run_dual_fusion_ablations.sh` for end-to-end runs:
+
+```bash
+bash run_dual_fusion_ablations.sh \
+  --dataset coco \
+  --exp-name df_coco_baseline \
+  --ablation baseline \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --setting both \
+  --shots "1 2 3 5 10 30" \
+  --seeds "0"
+```
+
+VOC example:
+
+```bash
+bash run_dual_fusion_ablations.sh \
+  --dataset voc \
+  --split-id 1 \
+  --exp-name df_voc_s1 \
+  --ablation lr_0p005 \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --setting fsod \
+  --shots "1 2 3 5 10" \
+  --seeds "0 1 2 3 4 5 6 7 8 9"
+```
+
+Run all ablations (COCO):
+
+```bash
+for abl in baseline norefine roi_res5 origweights rpn_no_res5 roi_res4_only light512 lr_0p005 lr_0p0025; do
+  bash run_dual_fusion_ablations.sh \
+    --dataset coco \
+    --exp-name df_coco_all \
+    --ablation "${abl}" \
+    --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+    --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+    --setting both \
+    --shots "1 2 3 5 10 30" \
+    --seeds "0"
+done
+```
+
+What this script does:
+
+1. Base pre-training with the selected ablation base config.
+2. Model surgery (`remove` for FSOD and `randinit` for GFSOD).
+3. Novel fine-tuning for selected shots and seeds.
+4. Result summary generation via `tools/extract_results.py`.
+
+Important notes:
+
+1. It generates seed-specific temporary configs under `/tmp` and does not modify your config files.
+2. `--skip-base` can be used to reuse an existing base checkpoint in the same output directory.
+3. Results are saved under `checkpoints/<dataset>/<exp-name>/<ablation>/`.
+
+### Adapter Ablations (Vanilla Forward Decoupling)
+
+This repo also includes adapter-based forward-decoupling ablations under:
+
+```text
+configs/coco/adapterAblations/
+configs/voc/adapterAblations/
+```
+
+Each folder contains full base-stage and shot-stage configs:
+`baseline`, `off`, `shared`, `no_gate`, `gate_init1`, `light`, `heavy`, `ln`, `rpn_only`, `roi_only`.
+
+What each adapter ablation tests:
+
+| Ablation folder | Main change vs `baseline` | What it tests |
+|---|---|---|
+| `baseline` | Enable branch adapters on `res4` for both RPN and ROI, separate adapters, `GN`, `BOTTLENECK_RATIO=0.25`, gated residual with `GATE_INIT=0.0` | Default adapter decoupling |
+| `off` | `BRANCH_ADAPTER.ENABLE=False` | No forward adapter (control) |
+| `shared` | `SHARED=True` | Shared adapter weights across RPN and ROI branches |
+| `no_gate` | `USE_GATE=False` | Residual adapter without learnable gate |
+| `gate_init1` | `GATE_INIT=1.0` | Full-strength adapter from start vs identity-start |
+| `light` | `BOTTLENECK_RATIO=0.125` | Lower adapter capacity |
+| `heavy` | `BOTTLENECK_RATIO=0.5` | Higher adapter capacity |
+| `ln` | `NORM="LN"` | Normalization choice (`LN` vs `GN`) |
+| `rpn_only` | `ROI_FEATURES=[]` | Adapt only proposal branch |
+| `roi_only` | `RPN_FEATURES=[]` | Adapt only ROI branch |
+
+Use `run_adapter_ablations.sh` for end-to-end runs:
+
+```bash
+bash run_adapter_ablations.sh \
+  --dataset coco \
+  --exp-name adapter_coco_baseline \
+  --ablation baseline \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --setting both \
+  --shots "1 2 3 5 10 30" \
+  --seeds "0"
+```
+
+VOC example:
+
+```bash
+bash run_adapter_ablations.sh \
+  --dataset voc \
+  --split-id 1 \
+  --exp-name adapter_voc_s1 \
+  --ablation light \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --setting fsod \
+  --shots "1 2 3 5 10" \
+  --seeds "0 1 2 3 4 5 6 7 8 9"
+```
+
+Run all adapter ablations (COCO):
+
+```bash
+for abl in baseline off shared no_gate gate_init1 light heavy ln rpn_only roi_only; do
+  bash run_adapter_ablations.sh \
+    --dataset coco \
+    --exp-name adapter_coco_all \
+    --ablation "${abl}" \
+    --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+    --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+    --setting both \
+    --shots "1 2 3 5 10 30" \
+    --seeds "0"
+done
+```
+
+What this script does:
+
+1. Base pre-training with the selected adapter ablation base config.
+2. Model surgery (`remove` for FSOD and `randinit` for GFSOD).
+3. Novel fine-tuning for selected shots and seeds.
+4. Result summary generation via `tools/extract_results.py`.
+
+Important notes:
+
+1. It generates seed-specific temporary configs under `/tmp` and does not modify your config files.
+2. `--skip-base` can be used to reuse an existing base checkpoint in the same output directory.
+3. Results are saved under `checkpoints/<dataset>/<exp-name>/<ablation>/`.
+
+### VAE-FSOD (Paper-Style, No Ablations)
+
+Paper implemented: *Generating Features with Increased Crop-related Diversity for Few-Shot Object Detection* (Norm-VAE on top of DeFRCN).
+
+Config folders:
+
+```text
+configs/coco/vaeFsod/
+configs/voc/vaeFsod/
+```
+
+These are paper-style (single setting, no ablations) configs:
+
+1. Base-stage configs (`defrcn_det_r101_base*_vaefsod.yaml`) keep VAE disabled.
+2. FSOD-stage configs (`defrcn_fsod_*_vaefsod.yaml`) enable VAE auxiliary classification with generated feature bank.
+3. VAE paper settings are encoded in `MODEL.VAE_FSOD.*`:
+   - latent/semantic dims = `512`,
+   - encoder hidden = `4096` (3 FC encoder),
+   - decoder hidden = `4096` (2 FC decoder),
+   - IoU-to-norm mapping range uses `sqrt(d)` to `5*sqrt(d)`,
+   - generated features per class = `30`,
+   - beta interval = `0.75`.
+
+End-to-end runner:
+
+```bash
+bash run_vae_fsod.sh \
+  --dataset coco \
+  --exp-name vaefsod_coco \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --shots "1 2 3 5 10 30" \
+  --seeds "0"
+```
+
+VOC example:
+
+```bash
+bash run_vae_fsod.sh \
+  --dataset voc \
+  --split-id 1 \
+  --exp-name vaefsod_voc_s1 \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --shots "1 2 3 5 10" \
+  --seeds "0 1 2 3 4 5 6 7 8 9"
+```
+
+What `run_vae_fsod.sh` does:
+
+1. Base pre-training with `vaeFsod` base config.
+2. Model surgery (`remove`) for FSOD fine-tuning initialization.
+3. Train Norm-VAE on base-set RoI features (`tools/train_vae_fsod.py`).
+4. For each shot/seed:
+   - generate a shot/seed FSOD config,
+   - generate class-conditional synthetic feature bank (`tools/generate_vae_fsod_features.py`),
+   - fine-tune DeFRCN with VAE auxiliary classification loss.
+5. Summarize results via `tools/extract_results.py`.
+
+Outputs are written to:
+
+```text
+checkpoints/<dataset>/<exp-name>/vaeFsod/
+```
+
+### Quantifying Proposal Bottleneck Gap (Vanilla DeFRCN)
+
+Use `tools/quantify_proposal_gap.py` to measure how much performance is capped by proposal quality.
+
+Example:
+
+```bash
+conda run -n defrcn-env bash -lc '
+cd /path/to/DeFRCN
+PYTHONPATH=$PWD python tools/quantify_proposal_gap.py \
+  --config-file configs/coco/defrcn_fsod_r101_novel_10shot_seedx.yaml \
+  --weights /path/to/model_final.pth \
+  --device cuda \
+  --topk 100,300,1000 \
+  --ious 0.5,0.75 \
+  --ap50 18.4 \
+  --output-json outputs/proposal_gap.json
+'
+```
+
+What it computes:
+
+1. `Recall@K,IoU`: fraction of GT boxes covered by top-K proposals at IoU threshold.
+2. `MissGap = 1 - Recall`: direct proposal miss bottleneck.
+3. `APCeiling = 100 * Recall`: upper-bound proxy assuming perfect downstream classification/regression over proposed regions.
+4. Size-wise recall (`small`, `medium`, `large`).
+5. Per-class recall at `max(K)` and IoU `0.50` (or first IoU in `--ious` if `0.50` is absent).
+
+How to interpret:
+
+1. Proposal bottleneck (hard limit proxy) at IoU=0.50: `100 - APCeiling`.
+2. If `--ap50` is provided, script reports headroom: `APCeiling - AP50`.
+3. Large size-wise/per-class gaps indicate where RPN misses are concentrated.
+
+CLI arguments:
+
+1. `--config-file`: model config path.
+2. `--weights`: checkpoint path.
+3. `--dataset`: optional override for `cfg.DATASETS.TEST[0]`.
+4. `--topk`: comma-separated proposal budgets (default `100,300,1000`).
+5. `--ious`: comma-separated IoU thresholds (default `0.5,0.75`).
+6. `--max-images`: optional quick run limit.
+7. `--ap50`: optional observed AP50 for headroom reporting.
+8. `--output-json`: optional json dump of all summary rows.
+
+JSON output includes:
+
+1. Global summary (`total_images`, `total_gt`, `avg_proposals_per_image`).
+2. `summary`: recall/miss-gap/ceiling rows for all `(topk, iou)` pairs.
+3. `size_rows`: per-size recall rows.
+4. `class_rows`: per-class recall rows.
+
 ## Results on COCO Benchmark
 
 * Few-shot Object Detection

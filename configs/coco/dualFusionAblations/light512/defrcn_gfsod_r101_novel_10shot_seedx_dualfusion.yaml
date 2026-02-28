@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_gfsod_r101_novel_10shot_seedx_dualfusion.yaml"
+MODEL:
+  DUAL_FUSION:
+    ALIGN_CHANNELS: 512

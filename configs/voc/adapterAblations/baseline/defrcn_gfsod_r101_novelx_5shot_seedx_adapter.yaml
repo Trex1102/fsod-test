@@ -1,0 +1,18 @@
+_BASE_: "../../defrcn_gfsod_r101_novelx_5shot_seedx.yaml"
+MODEL:
+  RPN:
+    IN_FEATURES: ["res4"]
+  ROI_HEADS:
+    IN_FEATURES: ["res4"]
+  BRANCH_ADAPTER:
+    ENABLE: True
+    RPN_FEATURES: ["res4"]
+    ROI_FEATURES: ["res4"]
+    SHARED: False
+    BOTTLENECK_RATIO: 0.25
+    MIN_CHANNELS: 64
+    NORM: "GN"
+    GN_NUM_GROUPS: 32
+    USE_GATE: True
+    GATE_INIT: 0.0
+    ZERO_INIT_LAST: True

@@ -1,0 +1,7 @@
+_BASE_: "../baseline/defrcn_det_r101_base_dualfusion.yaml"
+MODEL:
+  DUAL_FUSION:
+    RPN_INIT_LOGITS: [2.0, 1.0, 0.0]
+    ROI_INIT_LOGITS: [0.0, 1.0, 2.0]
+    RPN_LEVELS: ["res3", "res4", "res5"]
+    ROI_LEVELS: ["res3", "res4", "res5"]

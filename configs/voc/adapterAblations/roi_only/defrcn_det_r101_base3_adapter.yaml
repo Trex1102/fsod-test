@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_det_r101_base3_adapter.yaml"
+MODEL:
+  BRANCH_ADAPTER:
+    RPN_FEATURES: []

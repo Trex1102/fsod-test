@@ -1,8 +1,10 @@
 import torch
 import logging
+import os
 import numpy as np
 from torch import nn
 from typing import Dict
+from torch.nn import functional as F
 from detectron2.layers import ShapeSpec
 from detectron2.utils.registry import Registry
 from detectron2.modeling.matcher import Matcher
@@ -106,6 +108,82 @@ class ROIHeads(torch.nn.Module):
         self.box2box_transform = Box2BoxTransform(
             weights=cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_WEIGHTS
         )
+
+        self.vae_fsod_enable = bool(cfg.MODEL.VAE_FSOD.ENABLE)
+        self.vae_aux_batch_size = int(cfg.MODEL.VAE_FSOD.AUX_BATCH_SIZE)
+        self.vae_aux_loss_weight = float(cfg.MODEL.VAE_FSOD.AUX_LOSS_WEIGHT)
+        self.vae_feature_bank_path = str(cfg.MODEL.VAE_FSOD.FEATURE_BANK_PATH)
+        self._vae_bank_features = None
+        self._vae_bank_labels = None
+        self._vae_bank_size = 0
+        if self.vae_fsod_enable:
+            self._load_vae_feature_bank()
+
+    def _load_vae_feature_bank(self):
+        if not self.vae_feature_bank_path:
+            raise ValueError(
+                "MODEL.VAE_FSOD.ENABLE=True but MODEL.VAE_FSOD.FEATURE_BANK_PATH is empty."
+            )
+        if not os.path.isfile(self.vae_feature_bank_path):
+            raise FileNotFoundError(
+                "VAE-FSOD feature bank not found: {}".format(self.vae_feature_bank_path)
+            )
+
+        bank = torch.load(self.vae_feature_bank_path, map_location="cpu")
+        if not isinstance(bank, dict) or "features" not in bank or "labels" not in bank:
+            raise ValueError(
+                "Invalid VAE feature bank format. Expected dict with keys: 'features', 'labels'."
+            )
+
+        features = torch.as_tensor(bank["features"]).float()
+        labels = torch.as_tensor(bank["labels"]).long()
+        if features.ndim != 2:
+            raise ValueError(
+                "VAE feature bank 'features' must be 2D [N, C], got {}".format(tuple(features.shape))
+            )
+        if labels.ndim != 1:
+            raise ValueError(
+                "VAE feature bank 'labels' must be 1D [N], got {}".format(tuple(labels.shape))
+            )
+        if features.shape[0] != labels.shape[0]:
+            raise ValueError(
+                "VAE feature bank size mismatch: features N={} vs labels N={}".format(
+                    features.shape[0], labels.shape[0]
+                )
+            )
+
+        valid = (labels >= 0) & (labels < self.num_classes)
+        features = features[valid]
+        labels = labels[valid]
+        if features.shape[0] == 0:
+            raise ValueError(
+                "VAE feature bank has no valid labels in [0, {}).".format(self.num_classes)
+            )
+
+        self._vae_bank_features = features.contiguous()
+        self._vae_bank_labels = labels.contiguous()
+        self._vae_bank_size = int(features.shape[0])
+        logger.info(
+            "Loaded VAE-FSOD feature bank: %d samples from %s",
+            self._vae_bank_size,
+            self.vae_feature_bank_path,
+        )
+
+    def _sample_vae_batch(self, device):
+        if (not self.vae_fsod_enable) or self._vae_bank_size <= 0:
+            return None, None
+        batch_size = min(self.vae_aux_batch_size, self._vae_bank_size)
+        idx = torch.randint(0, self._vae_bank_size, (batch_size,), device=self._vae_bank_features.device)
+        feats = self._vae_bank_features[idx].to(device=device, non_blocking=True)
+        labels = self._vae_bank_labels[idx].to(device=device, non_blocking=True)
+        return feats, labels
+
+    def _vae_aux_cls_loss(self, predictor):
+        feats, labels = self._sample_vae_batch(next(predictor.parameters()).device)
+        if feats is None:
+            return None
+        pred_logits, _ = predictor(feats)
+        return F.cross_entropy(pred_logits, labels) * self.vae_aux_loss_weight
 
     def _sample_proposals(self, matched_idxs, matched_labels, gt_classes):
         """
@@ -366,6 +444,9 @@ class Res5ROIHeads(ROIHeads):
         if self.training:
             del features
             losses = outputs.losses()
+            vae_loss = self._vae_aux_cls_loss(self.box_predictor)
+            if vae_loss is not None:
+                losses["loss_cls_vae"] = vae_loss
             return [], losses
         else:
             pred_instances, _ = outputs.inference(
@@ -506,7 +587,11 @@ class StandardROIHeads(ROIHeads):
             self.smooth_l1_beta,
         )
         if self.training:
-            return outputs.losses()
+            losses = outputs.losses()
+            vae_loss = self._vae_aux_cls_loss(self.cls_predictor)
+            if vae_loss is not None:
+                losses["loss_cls_vae"] = vae_loss
+            return losses
         else:
             pred_instances, _ = outputs.inference(
                 self.test_score_thresh,
