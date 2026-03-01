@@ -255,22 +255,31 @@ Important notes:
 2. `--skip-base` can be used to reuse an existing base checkpoint in the same output directory.
 3. Results are saved under `checkpoints/<dataset>/<exp-name>/<ablation>/`.
 
-### VAE-FSOD (Paper-Style, No Ablations)
+### VAE-FSOD (Norm + Quality-Conditioned Variant)
 
-Paper implemented: *Generating Features with Increased Crop-related Diversity for Few-Shot Object Detection* (Norm-VAE on top of DeFRCN).
+Implemented methods:
+
+1. Norm-VAE (paper-style): *Generating Features with Increased Crop-related Diversity for Few-Shot Object Detection*.
+2. Quality-conditioned VAE (modular extension): condition on proposal-quality vector
+   (`iou`, `fg_ratio`, `gt_coverage`, `center_offset`, `crowding`) with
+   easy/medium/hard quality-bin sampling and a quality consistency head.
 
 Config folders:
 
 ```text
 configs/coco/vaeFsod/
 configs/voc/vaeFsod/
+configs/coco/qualityVaeFsod/
+configs/voc/qualityVaeFsod/
 ```
 
-These are paper-style (single setting, no ablations) configs:
+Config intent:
 
 1. Base-stage configs (`defrcn_det_r101_base*_vaefsod.yaml`) keep VAE disabled.
 2. FSOD-stage configs (`defrcn_fsod_*_vaefsod.yaml`) enable VAE auxiliary classification with generated feature bank.
-3. VAE paper settings are encoded in `MODEL.VAE_FSOD.*`:
+3. Quality-stage configs are organized by ablation folder under `qualityVaeFsod/`.
+4. `qualityVaeFsod/baseline/` contains the original quality-VAE configs (moved from root).
+5. VAE paper settings are encoded in `MODEL.VAE_FSOD.*`:
    - latent/semantic dims = `512`,
    - encoder hidden = `4096` (3 FC encoder),
    - decoder hidden = `4096` (2 FC decoder),
@@ -278,7 +287,20 @@ These are paper-style (single setting, no ablations) configs:
    - generated features per class = `30`,
    - beta interval = `0.75`.
 
-End-to-end runner:
+Quality-VAE ablations (both COCO and VOC have full base + shot config sets):
+
+| Ablation folder | Main change vs `baseline` | What it tests |
+|---|---|---|
+| `baseline` | `KEYS=[iou, fg_ratio, gt_coverage, center_offset, crowding]`, `AUX_LOSS_WEIGHT=0.2`, `BIN_QUANTILES=[0.33,0.66]`, `GEN_BIN_RATIOS=[0.34,0.33,0.33]` | Default quality-conditioned VAE |
+| `iou_only` | `KEYS=[iou]`, `HARDNESS_WEIGHTS=[1.0]` | Whether multi-factor quality is better than IoU-only conditioning |
+| `no_qaux` | `QUALITY.AUX_LOSS_WEIGHT=0.0` | Effect of quality consistency head/loss |
+| `no_crowding` | Remove `crowding` from `KEYS` and weights | Value of explicit crowding/nearby-instance signal |
+| `center_heavy` | `HARDNESS_WEIGHTS=[0.5,0.5,0.5,2.0,0.5]` | Emphasizing center misalignment in hardness definition |
+| `hard_bias` | `GEN_BIN_RATIOS=[0.20,0.30,0.50]` | More hard-sample generation during synthetic feature creation |
+| `easy_bias` | `GEN_BIN_RATIOS=[0.50,0.30,0.20]` | More easy-sample generation (control against hard-bias) |
+| `wide_bins` | `BIN_QUANTILES=[0.25,0.75]` | Sharper easy/medium/hard partitioning |
+
+End-to-end runner (Norm-VAE default):
 
 ```bash
 bash run_vae_fsod.sh \
@@ -303,21 +325,65 @@ bash run_vae_fsod.sh \
   --seeds "0 1 2 3 4 5 6 7 8 9"
 ```
 
+Quality-conditioned variant example:
+
+```bash
+bash run_vae_fsod.sh \
+  --dataset coco \
+  --variant quality \
+  --ablation baseline \
+  --exp-name qvaefsod_coco \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --shots "1 2 3 5 10 30" \
+  --seeds "0"
+```
+
+Run all quality-VAE ablations (COCO):
+
+```bash
+bash run_quality_vae_ablations.sh \
+  --dataset coco \
+  --exp-name qvaefsod_coco_all \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --shots "1 2 3 5 10 30" \
+  --seeds "0"
+```
+
+Run selected quality ablations only:
+
+```bash
+bash run_quality_vae_ablations.sh \
+  --dataset voc \
+  --split-id 1 \
+  --exp-name qvaefsod_voc_subset \
+  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
+  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
+  --ablations "baseline iou_only no_qaux" \
+  --shots "1 2 3 5 10" \
+  --seeds "0 1 2 3 4 5 6 7 8 9"
+```
+
 What `run_vae_fsod.sh` does:
 
-1. Base pre-training with `vaeFsod` base config.
+1. Base pre-training with the selected variant base config (`vaeFsod` or `qualityVaeFsod/<ablation>`).
 2. Model surgery (`remove`) for FSOD fine-tuning initialization.
-3. Train Norm-VAE on base-set RoI features (`tools/train_vae_fsod.py`).
+3. Train VAE on base-set RoI features (`tools/train_vae_fsod.py`):
+   - `--variant norm`: paper-style Norm-VAE.
+   - `--variant quality --ablation <name>`: quality-conditioned VAE with selected ablation configs.
 4. For each shot/seed:
    - generate a shot/seed FSOD config,
    - generate class-conditional synthetic feature bank (`tools/generate_vae_fsod_features.py`),
    - fine-tune DeFRCN with VAE auxiliary classification loss.
 5. Summarize results via `tools/extract_results.py`.
+6. `run_quality_vae_ablations.sh` wraps step 1-5 and loops over quality ablation folders.
 
 Outputs are written to:
 
 ```text
 checkpoints/<dataset>/<exp-name>/vaeFsod/
+checkpoints/<dataset>/<exp-name>/qualityVaeFsod/<ablation>/
 ```
 
 ### Quantifying Proposal Bottleneck Gap (Vanilla DeFRCN)

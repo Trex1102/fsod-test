@@ -1,0 +1,28 @@
+_BASE_: "../../defrcn_fsod_r101_novel_2shot_seedx.yaml"
+MODEL:
+  VAE_FSOD:
+    ENABLE: True
+    FEATURE_BANK_PATH: "/Path/to/VAE/Generated/FeatureBank.pt"
+    AUX_LOSS_WEIGHT: 1.0
+    AUX_BATCH_SIZE: 64
+    FEATURE_DIM: 2048
+    SEMANTIC_SOURCE: "clip"
+    SEMANTIC_DIM: 512
+    LATENT_DIM: 512
+    ENCODER_HIDDEN: 4096
+    DECODER_HIDDEN: 4096
+    IOU_MIN: 0.5
+    IOU_MAX: 1.0
+    NORM_MIN_FACTOR: 1.0
+    NORM_MAX_FACTOR: 5.0
+    BETA_INTERVAL: 0.75
+    NUM_GEN_PER_CLASS: 30
+    QUALITY:
+      ENABLE: true
+      KEYS: ["iou", "fg_ratio", "gt_coverage", "center_offset", "crowding"]
+      AUX_LOSS_WEIGHT: 0.2
+      AUX_LOSS_TYPE: "smooth_l1"
+      HARDNESS_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 0.5]
+      BIN_QUANTILES: [0.33, 0.66]
+      GEN_BIN_RATIOS: [0.34, 0.33, 0.33]
+      MAX_BANK_PER_CLASS_BIN: 512

@@ -6,6 +6,8 @@ usage() {
 Usage:
   bash run_vae_fsod.sh \
     --dataset {coco|voc} \
+    [--variant {norm|quality}] \
+    [--ablation ABLATION_NAME] \
     --exp-name EXP_NAME \
     --imagenet-pretrain /path/to/R-101.pkl \
     --imagenet-pretrain-torch /path/to/resnet101-5d3b4d8f.pth \
@@ -16,8 +18,13 @@ Usage:
     [--skip-base]
 
 Notes:
-  - This pipeline matches VAE-FSOD (FSOD only):
-    base pretrain -> model surgery(remove) -> train Norm-VAE on base features
+  - This pipeline supports:
+    norm:    original Norm-VAE FSOD
+    quality: quality-conditioned VAE FSOD (with ablation folders)
+  - Quality ablations:
+    baseline, iou_only, no_qaux, no_crowding, center_heavy, hard_bias, easy_bias, wide_bins
+  - Both run as FSOD-only:
+    base pretrain -> model surgery(remove) -> train VAE on base features
     -> generate per-shot feature banks -> FSOD fine-tuning with VAE aux cls loss.
 USAGE
 }
@@ -26,6 +33,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 DATASET=""
+VARIANT="norm"
+ABLATION="baseline"
 EXP_NAME=""
 IMAGENET_PRETRAIN=""
 IMAGENET_PRETRAIN_TORCH=""
@@ -38,6 +47,8 @@ RUN_BASE="1"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dataset) DATASET="$2"; shift 2 ;;
+    --variant) VARIANT="$2"; shift 2 ;;
+    --ablation) ABLATION="$2"; shift 2 ;;
     --exp-name) EXP_NAME="$2"; shift 2 ;;
     --imagenet-pretrain) IMAGENET_PRETRAIN="$2"; shift 2 ;;
     --imagenet-pretrain-torch) IMAGENET_PRETRAIN_TORCH="$2"; shift 2 ;;
@@ -64,6 +75,14 @@ if [[ "${DATASET}" != "coco" && "${DATASET}" != "voc" ]]; then
   echo "--dataset must be coco or voc" >&2
   exit 1
 fi
+if [[ "${VARIANT}" != "norm" && "${VARIANT}" != "quality" ]]; then
+  echo "--variant must be norm or quality" >&2
+  exit 1
+fi
+if [[ "${VARIANT}" == "norm" && "${ABLATION}" != "baseline" ]]; then
+  echo "--ablation is only used for --variant quality; ignoring '${ABLATION}'." >&2
+  ABLATION="baseline"
+fi
 if [[ "${DATASET}" == "voc" && "${SPLIT_ID}" != "1" && "${SPLIT_ID}" != "2" && "${SPLIT_ID}" != "3" ]]; then
   echo "--split-id must be 1, 2, or 3 for VOC" >&2
   exit 1
@@ -77,7 +96,11 @@ if [[ -z "${SHOTS}" ]]; then
   fi
 fi
 
-SAVE_DIR="checkpoints/${DATASET}/${EXP_NAME}/vaeFsod"
+SAVE_SUBDIR="vaeFsod"
+if [[ "${VARIANT}" == "quality" ]]; then
+  SAVE_SUBDIR="qualityVaeFsod/${ABLATION}"
+fi
+SAVE_DIR="checkpoints/${DATASET}/${EXP_NAME}/${SAVE_SUBDIR}"
 mkdir -p "${SAVE_DIR}"
 TMP_CFG_ROOT="$(mktemp -d /tmp/vaefsod_cfgs.XXXXXX)"
 cleanup() {
@@ -86,15 +109,25 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "${DATASET}" == "coco" ]]; then
-  BASE_CFG="configs/coco/vaeFsod/defrcn_det_r101_base_vaefsod.yaml"
+  if [[ "${VARIANT}" == "quality" ]]; then
+    BASE_CFG="configs/coco/qualityVaeFsod/${ABLATION}/defrcn_det_r101_base_qualityvaefsod.yaml"
+    TEMPLATE_ROOT="configs/coco/qualityVaeFsod/${ABLATION}"
+  else
+    BASE_CFG="configs/coco/vaeFsod/defrcn_det_r101_base_vaefsod.yaml"
+    TEMPLATE_ROOT="configs/coco/vaeFsod"
+  fi
   BASE_OUT_DIR="${SAVE_DIR}/defrcn_det_r101_base"
-  TEMPLATE_ROOT="configs/coco/vaeFsod"
   DATASET_FLAG="coco14"
   MODEL_SURGERY_DATASET="coco"
 else
-  BASE_CFG="configs/voc/vaeFsod/defrcn_det_r101_base${SPLIT_ID}_vaefsod.yaml"
+  if [[ "${VARIANT}" == "quality" ]]; then
+    BASE_CFG="configs/voc/qualityVaeFsod/${ABLATION}/defrcn_det_r101_base${SPLIT_ID}_qualityvaefsod.yaml"
+    TEMPLATE_ROOT="configs/voc/qualityVaeFsod/${ABLATION}"
+  else
+    BASE_CFG="configs/voc/vaeFsod/defrcn_det_r101_base${SPLIT_ID}_vaefsod.yaml"
+    TEMPLATE_ROOT="configs/voc/vaeFsod"
+  fi
   BASE_OUT_DIR="${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}"
-  TEMPLATE_ROOT="configs/voc/vaeFsod"
   DATASET_FLAG="voc"
   MODEL_SURGERY_DATASET="voc"
 fi
@@ -120,10 +153,14 @@ prepare_surgery_weights() {
     --src-path "${model_final}" --save-dir "${BASE_OUT_DIR}"
 }
 
-train_norm_vae() {
-  local vae_out="${SAVE_DIR}/norm_vae/model_final.pth"
+train_vae_model() {
+  local vae_out="${SAVE_DIR}/vae_model/model_final.pth"
   mkdir -p "$(dirname "${vae_out}")"
-  echo "[VAE] Training Norm-VAE on base dataset features"
+  if [[ "${VARIANT}" == "quality" ]]; then
+    echo "[VAE] Training quality-conditioned VAE on base dataset features" >&2
+  else
+    echo "[VAE] Training Norm-VAE on base dataset features" >&2
+  fi
   python3 tools/train_vae_fsod.py \
     --config-file "${BASE_CFG}" \
     --weights "${BASE_OUT_DIR}/model_final.pth" \
@@ -155,21 +192,36 @@ generate_seed_cfg() {
   local shot="$1"
   local seed="$2"
   local extra_args=()
+  local variant_cfg_dir="vaeFsod"
   local root_template
   local root_generated
   local vae_template
   local vae_generated
 
+  if [[ "${VARIANT}" == "quality" ]]; then
+    variant_cfg_dir="qualityVaeFsod/${ABLATION}"
+  fi
+
   if [[ "${DATASET}" == "coco" ]]; then
     root_template="defrcn_fsod_r101_novel_${shot}shot_seedx.yaml"
     root_generated="defrcn_fsod_r101_novel_${shot}shot_seed${seed}.yaml"
-    vae_template="defrcn_fsod_r101_novel_${shot}shot_seedx_vaefsod.yaml"
-    vae_generated="defrcn_fsod_r101_novel_${shot}shot_seed${seed}_vaefsod.yaml"
+    if [[ "${VARIANT}" == "quality" ]]; then
+      vae_template="defrcn_fsod_r101_novel_${shot}shot_seedx_qualityvaefsod.yaml"
+      vae_generated="defrcn_fsod_r101_novel_${shot}shot_seed${seed}_qualityvaefsod.yaml"
+    else
+      vae_template="defrcn_fsod_r101_novel_${shot}shot_seedx_vaefsod.yaml"
+      vae_generated="defrcn_fsod_r101_novel_${shot}shot_seed${seed}_vaefsod.yaml"
+    fi
   else
     root_template="defrcn_fsod_r101_novelx_${shot}shot_seedx.yaml"
     root_generated="defrcn_fsod_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}.yaml"
-    vae_template="defrcn_fsod_r101_novelx_${shot}shot_seedx_vaefsod.yaml"
-    vae_generated="defrcn_fsod_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_vaefsod.yaml"
+    if [[ "${VARIANT}" == "quality" ]]; then
+      vae_template="defrcn_fsod_r101_novelx_${shot}shot_seedx_qualityvaefsod.yaml"
+      vae_generated="defrcn_fsod_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_qualityvaefsod.yaml"
+    else
+      vae_template="defrcn_fsod_r101_novelx_${shot}shot_seedx_vaefsod.yaml"
+      vae_generated="defrcn_fsod_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_vaefsod.yaml"
+    fi
     extra_args=(--split "${SPLIT_ID}")
   fi
 
@@ -190,7 +242,7 @@ generate_seed_cfg() {
     exit 1
   fi
 
-  local vae_cfg="${tmp_dataset_root}/vaeFsod/${vae_generated}"
+  local vae_cfg="${tmp_dataset_root}/${variant_cfg_dir}/${vae_generated}"
   render_template_cfg "${TEMPLATE_ROOT}/${vae_template}" "${vae_cfg}" "${seed}" "${DATASET}" "${SPLIT_ID}"
   echo "${vae_cfg}"
 }
@@ -205,7 +257,7 @@ if [[ ! -f "${BASE_WEIGHT}" ]]; then
   exit 1
 fi
 
-VAE_CKPT="$(train_norm_vae)"
+VAE_CKPT="$(train_vae_model)"
 RES_DIR="${SAVE_DIR}/fsod"
 mkdir -p "${RES_DIR}"
 
