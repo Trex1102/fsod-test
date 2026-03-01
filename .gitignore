@@ -63,3 +63,6 @@ datasets/cocosplit/
 datasets/VOC2007/
 datasets/VOC2012/
 datasets/vocsplit/
+
+# Local conversation context
+chat_context.txt

@@ -7,10 +7,11 @@ from torch.nn import functional as F
 
 
 def linear_iou_to_norm(iou, iou_min, iou_max, norm_min, norm_max):
-    # Clamp for stability and map linearly from IoU range to target norm range.
+    # Clamp for stability and map linearly with inverse IoU relation:
+    # higher IoU -> smaller norm (easier), lower IoU -> larger norm (harder).
     x = torch.clamp(iou, min=float(iou_min), max=float(iou_max))
     alpha = (x - float(iou_min)) / max(float(iou_max - iou_min), 1e-6)
-    return float(norm_min) + alpha * float(norm_max - norm_min)
+    return float(norm_max) - alpha * float(norm_max - norm_min)
 
 
 def latent_norm_rescale(z, target_norm):
