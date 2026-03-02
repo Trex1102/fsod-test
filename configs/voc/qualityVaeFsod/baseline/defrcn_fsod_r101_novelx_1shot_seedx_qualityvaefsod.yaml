@@ -3,8 +3,8 @@ MODEL:
   VAE_FSOD:
     ENABLE: True
     FEATURE_BANK_PATH: "/Path/to/VAE/Generated/FeatureBank.pt"
-    AUX_LOSS_WEIGHT: 1.0
-    AUX_BATCH_SIZE: 64
+    AUX_LOSS_WEIGHT: 0.1
+    AUX_BATCH_SIZE: 16
     FEATURE_DIM: 2048
     SEMANTIC_SOURCE: "clip"
     SEMANTIC_DIM: 512
@@ -16,11 +16,11 @@ MODEL:
     NORM_MIN_FACTOR: 1.0
     NORM_MAX_FACTOR: 5.0
     BETA_INTERVAL: 0.75
-    NUM_GEN_PER_CLASS: 30
+    NUM_GEN_PER_CLASS: 10
     QUALITY:
       ENABLE: true
       KEYS: ["iou", "fg_ratio", "gt_coverage", "center_offset", "crowding"]
-      AUX_LOSS_WEIGHT: 0.2
+      AUX_LOSS_WEIGHT: 0.1
       AUX_LOSS_TYPE: "smooth_l1"
       HARDNESS_WEIGHTS: [1.0, 1.0, 1.0, 1.0, 0.5]
       BIN_QUANTILES: [0.33, 0.66]
