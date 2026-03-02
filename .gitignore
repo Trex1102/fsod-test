@@ -66,3 +66,6 @@ datasets/vocsplit/
 
 # Local conversation context
 chat_context.txt
+
+
+fsod_setpu.exit
