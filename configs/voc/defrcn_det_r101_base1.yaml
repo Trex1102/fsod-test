@@ -18,8 +18,8 @@ DATASETS:
   TRAIN: ('voc_2007_trainval_base1', 'voc_2012_trainval_base1')
   TEST: ('voc_2007_test_base1',)
 SOLVER:
-  STEPS: (10000, 13300)
-  MAX_ITER: 15000
+  STEPS: (20000, 26600)
+  MAX_ITER: 30000
   CHECKPOINT_PERIOD: 200000
-  WARMUP_ITERS: 100
+  WARMUP_ITERS: 200
 OUTPUT_DIR: "/Path/to/Output/Dir"

@@ -1,0 +1,16 @@
+pip uninstall torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+export CUDA_HOME=/usr/local/cuda-12.4
+export PATH=$CUDA_HOME/bin:$PATH
+
+
+git clone https://github.com/facebookresearch/detectron2.git
+cd detectron2
+git checkout v0.3
+
+
+cd /home/ndag/Documents/fsod-test/detectron2
+rm -rf build/ detectron2.egg-info
+python -m pip install -e .
+
