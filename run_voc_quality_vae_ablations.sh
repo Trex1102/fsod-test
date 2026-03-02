@@ -9,20 +9,21 @@ IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet1
 
 # ABLATIONS="baseline iou_only no_qaux no_crowding center_heavy hard_bias easy_bias wide_bins"
 ABLATIONS="baseline"
-SHOTS="1 2 3 5 10"
+# SHOTS="1 2 3 5 10"
+SHOTS="1"
 SEEDS="0"
 
 
 # ------------------------------- Base Pre-train ---------------------------------- #
-python3 main.py --num-gpus 1 --config-file configs/voc/defrcn_det_r101_base${SPLIT_ID}.yaml     \
-    --opts MODEL.WEIGHTS ${IMAGENET_PRETRAIN}                                                   \
-           OUTPUT_DIR ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
+# python3 main.py --num-gpus 1 --config-file configs/voc/defrcn_det_r101_base${SPLIT_ID}.yaml     \
+#     --opts MODEL.WEIGHTS ${IMAGENET_PRETRAIN}                                                   \
+#            OUTPUT_DIR ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
 
 
 # ------------------------------ Model Preparation -------------------------------- #
-python3 tools/model_surgery.py --dataset voc --method remove                                    \
-    --src-path ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_final.pth                      \
-    --save-dir ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
+# python3 tools/model_surgery.py --dataset voc --method remove                                    \
+#     --src-path ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_final.pth                      \
+#     --save-dir ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
 BASE_WEIGHT=${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_reset_remove.pth
 
 
@@ -38,10 +39,10 @@ do
     mkdir -p ${ABLATION_SAVE_DIR}/fsod
 
     # ------------------------------ VAE Training --------------------------------- #
-    python3 tools/train_vae_fsod.py \
-        --config-file ${BASE_CFG} \
-        --weights ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_final.pth \
-        --output ${VAE_CKPT}
+    # python3 tools/train_vae_fsod.py \
+    #     --config-file ${BASE_CFG} \
+    #     --weights ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_final.pth \
+    #     --output ${VAE_CKPT}
 
     # ---------------------------- Novel Fine-tuning ------------------------------ #
     for shot in ${SHOTS}
