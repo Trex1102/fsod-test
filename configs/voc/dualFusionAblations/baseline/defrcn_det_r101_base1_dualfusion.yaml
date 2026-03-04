@@ -12,9 +12,14 @@ MODEL:
     OUT_FEATURE: "res4"
     ALIGN_CHANNELS: 1024
     USE_REFINE: True
-    # Strong res3/res4, moderate res5
     RPN_INIT_LOGITS: [2.0, 1.5, 0.5]
-    # Strong res3/res4, near-zero res5
     ROI_INIT_LOGITS: [2.0, 1.5, -3.0]
     RPN_LEVELS: ["res3", "res4", "res5"]
     ROI_LEVELS: ["res3", "res4"]
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.01
+  STEPS: (20000, 26600)
+  MAX_ITER: 20000
+  CHECKPOINT_PERIOD: 200000
+  WARMUP_ITERS: 200
