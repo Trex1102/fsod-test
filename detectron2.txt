@@ -1,3 +1,5 @@
+python 3.8
+
 pip uninstall torch torchvision torchaudio
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
@@ -10,7 +12,7 @@ cd detectron2
 git checkout v0.3
 
 
-cd /home/ndag/Documents/fsod-test/detectron2
+cd /home/ssl/Documents/fsod-test/detectron2
 rm -rf build/ detectron2.egg-info
 python -m pip install -e .
 

@@ -12,7 +12,7 @@ fi
 SAVE_DIR=checkpoints/voc/${EXP_NAME}
 IMAGENET_PRETRAIN=.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # optional legacy C2 pretrain
 IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to your path
-BASE_PRETRAIN=${BASE_PRETRAIN:-${IMAGENET_PRETRAIN_TORCH}}
+BASE_PRETRAIN=${BASE_PRETRAIN:-${IMAGENET_PRETRAIN}}
 
 # ABLATIONS="baseline off shared no_gate gate_init1 light heavy ln rpn_only roi_only"
 ABLATIONS="baseline"
