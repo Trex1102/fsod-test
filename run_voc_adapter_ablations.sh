@@ -14,10 +14,10 @@ IMAGENET_PRETRAIN=.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl           
 IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to your path
 BASE_PRETRAIN=${BASE_PRETRAIN:-${IMAGENET_PRETRAIN}}
 
-# ABLATIONS="baseline off shared no_gate gate_init1 light heavy ln rpn_only roi_only"
-ABLATIONS="shared light heavy rpn_only roi_only"
+ABLATIONS="shared light heavy ln rpn_only roi_only"
+# ABLATIONS="gate_init1
 # SHOTS="1 2 3 5 10"
-SHOTS="10"
+SHOTS="1"
 SEEDS="0"
 # SETTINGS="fsod gfsod"
 SETTINGS="fsod"
@@ -32,6 +32,7 @@ do
     mkdir -p ${ABLATION_SAVE_DIR}
 
     # ------------------------------- Base Pre-train ---------------------------------- #
+    # Reuse existing base-stage checkpoint; do not rerun this stage.
     python3 main.py --num-gpus 1 --config-file ${BASE_CFG}                               \
         --opts MODEL.WEIGHTS ${BASE_PRETRAIN}                                            \
                OUTPUT_DIR ${BASE_STAGE_DIR}
@@ -53,6 +54,7 @@ do
         mkdir -p ${SETTING_SAVE_DIR}
 
         # ------------------------------ Model Preparation -------------------------------- #
+        # Reuse existing surgery output; do not rerun this stage.
         python3 tools/model_surgery.py --dataset voc --method ${SURGERY_METHOD}                 \
             --src-path ${BASE_STAGE_DIR}/model_final.pth                                         \
             --save-dir ${BASE_STAGE_DIR}
@@ -67,6 +69,17 @@ do
                     --shot ${shot} --seed ${seed} --setting ${setting} --split ${SPLIT_ID}
 
                 BASE_CONFIG_PATH=configs/voc/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}.yaml
+
+                # For non-baseline ablations, generate the split/seed-specific baseline adapter config
+                # because template _BASE_ paths are rewritten from novelx/seedx to concrete names.
+                BASELINE_TEMPLATE=configs/voc/adapterAblations/baseline/defrcn_${setting}_r101_novelx_${shot}shot_seedx_adapter.yaml
+                BASELINE_CONFIG_PATH=configs/voc/adapterAblations/baseline/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_adapter.yaml
+                if [ "${ablation}" != "baseline" ]; then
+                    cp ${BASELINE_TEMPLATE} ${BASELINE_CONFIG_PATH}
+                    sed -i "s/novelx/novel${SPLIT_ID}/g" ${BASELINE_CONFIG_PATH}
+                    sed -i "s/seedx/seed${seed}/g" ${BASELINE_CONFIG_PATH}
+                fi
+
                 ADAPTER_TEMPLATE=configs/voc/adapterAblations/${ablation}/defrcn_${setting}_r101_novelx_${shot}shot_seedx_adapter.yaml
                 ADAPTER_CONFIG_PATH=configs/voc/adapterAblations/${ablation}/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_adapter.yaml
                 OUTPUT_DIR=${SETTING_SAVE_DIR}/${shot}shot_seed${seed}
@@ -79,9 +92,12 @@ do
                     --opts MODEL.WEIGHTS ${BASE_WEIGHT} OUTPUT_DIR ${OUTPUT_DIR}                 \
                            TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
 
-                rm ${ADAPTER_CONFIG_PATH}
-                rm ${BASE_CONFIG_PATH}
-                rm ${OUTPUT_DIR}/model_final.pth
+                rm -f ${ADAPTER_CONFIG_PATH}
+                rm -f ${BASE_CONFIG_PATH}
+                rm -f ${OUTPUT_DIR}/model_final.pth
+                if [ "${ablation}" != "baseline" ]; then
+                    rm -f ${BASELINE_CONFIG_PATH}
+                fi
             done
         done
 
