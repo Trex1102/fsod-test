@@ -15,9 +15,9 @@ IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet1
 BASE_PRETRAIN=${BASE_PRETRAIN:-${IMAGENET_PRETRAIN}}
 
 # ABLATIONS="baseline off shared no_gate gate_init1 light heavy ln rpn_only roi_only"
-ABLATIONS="baseline"
+ABLATIONS="shared light heavy rpn_only roi_only"
 # SHOTS="1 2 3 5 10"
-SHOTS="1"
+SHOTS="10"
 SEEDS="0"
 # SETTINGS="fsod gfsod"
 SETTINGS="fsod"
@@ -49,6 +49,9 @@ do
             exit 1
         fi
 
+        SETTING_SAVE_DIR=${ABLATION_SAVE_DIR}/${setting}/split${SPLIT_ID}
+        mkdir -p ${SETTING_SAVE_DIR}
+
         # ------------------------------ Model Preparation -------------------------------- #
         python3 tools/model_surgery.py --dataset voc --method ${SURGERY_METHOD}                 \
             --src-path ${BASE_STAGE_DIR}/model_final.pth                                         \
@@ -66,7 +69,7 @@ do
                 BASE_CONFIG_PATH=configs/voc/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}.yaml
                 ADAPTER_TEMPLATE=configs/voc/adapterAblations/${ablation}/defrcn_${setting}_r101_novelx_${shot}shot_seedx_adapter.yaml
                 ADAPTER_CONFIG_PATH=configs/voc/adapterAblations/${ablation}/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_adapter.yaml
-                OUTPUT_DIR=${ABLATION_SAVE_DIR}/${setting}/${shot}shot_seed${seed}
+                OUTPUT_DIR=${SETTING_SAVE_DIR}/${shot}shot_seed${seed}
 
                 cp ${ADAPTER_TEMPLATE} ${ADAPTER_CONFIG_PATH}
                 sed -i "s/novelx/novel${SPLIT_ID}/g" ${ADAPTER_CONFIG_PATH}
@@ -82,6 +85,6 @@ do
             done
         done
 
-        python3 tools/extract_results.py --res-dir ${ABLATION_SAVE_DIR}/${setting} --shot-list ${SHOTS}
+        python3 tools/extract_results.py --res-dir ${SETTING_SAVE_DIR} --shot-list ${SHOTS}
     done
 done

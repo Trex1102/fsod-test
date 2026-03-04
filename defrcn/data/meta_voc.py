@@ -1,4 +1,5 @@
 import os
+import hashlib
 import numpy as np
 import xml.etree.ElementTree as ET
 from detectron2.structures import BoxMode
@@ -90,7 +91,12 @@ def load_filtered_voc_instances(
                     r["annotations"] = instances
                     dicts_.append(r)
             if len(dicts_) > int(shot):
-                dicts_ = np.random.choice(dicts_, int(shot), replace=False)
+                # Use deterministic, per-dataset/per-class sampling for reproducible few-shot splits.
+                sample_key = "{}|{}|{}|{}".format(name, cls, shot, len(dicts_))
+                sample_seed = int(hashlib.md5(sample_key.encode("utf-8")).hexdigest()[:8], 16)
+                rng = np.random.RandomState(sample_seed)
+                selected = sorted(rng.choice(len(dicts_), int(shot), replace=False).tolist())
+                dicts_ = [dicts_[idx] for idx in selected]
             dicts.extend(dicts_)
     else:
         for fileid in fileids:
