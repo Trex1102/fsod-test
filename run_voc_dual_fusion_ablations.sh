@@ -64,6 +64,9 @@ do
             exit 1
         fi
 
+        SETTING_SAVE_DIR=${ABLATION_SAVE_DIR}/${setting}/split${SPLIT_ID}
+        mkdir -p "${SETTING_SAVE_DIR}"
+
         # ------------------------------ Model Preparation -------------------------------- #
         python3 tools/model_surgery.py --dataset voc --method "${SURGERY_METHOD}"              \
             --src-path "${BASE_STAGE_DIR}/model_final.pth"                                      \
@@ -80,7 +83,7 @@ do
                 BASE_CONFIG_PATH=configs/voc/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}.yaml
                 DF_TEMPLATE=configs/voc/dualFusionAblations/${ablation}/defrcn_${setting}_r101_novelx_${shot}shot_seedx_dualfusion.yaml
                 DF_CONFIG_PATH=configs/voc/dualFusionAblations/${ablation}/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_dualfusion.yaml
-                OUTPUT_DIR=${ABLATION_SAVE_DIR}/${setting}/${shot}shot_seed${seed}
+                OUTPUT_DIR=${SETTING_SAVE_DIR}/${shot}shot_seed${seed}
 
                 cp "${DF_TEMPLATE}" "${DF_CONFIG_PATH}"
                 sed -i "s/novelx/novel${SPLIT_ID}/g" "${DF_CONFIG_PATH}"
@@ -94,6 +97,6 @@ do
             done
         done
 
-        python3 tools/extract_results.py --res-dir "${ABLATION_SAVE_DIR}/${setting}" --shot-list ${SHOTS}
+        python3 tools/extract_results.py --res-dir "${SETTING_SAVE_DIR}" --shot-list ${SHOTS}
     done
 done

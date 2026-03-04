@@ -2,3 +2,10 @@ _BASE_: "../baseline/defrcn_det_r101_base2_adapter.yaml"
 MODEL:
   BRANCH_ADAPTER:
     NORM: "LN"
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.01
+  STEPS: (13300, 17733)
+  MAX_ITER: 20000
+  CHECKPOINT_PERIOD: 200000
+  WARMUP_ITERS: 200

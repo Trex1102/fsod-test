@@ -2,3 +2,10 @@ _BASE_: "../baseline/defrcn_fsod_r101_novelx_10shot_seedx_adapter.yaml"
 MODEL:
   BRANCH_ADAPTER:
     BOTTLENECK_RATIO: 0.5
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.005
+  STEPS: (6400,)
+  MAX_ITER: 8000
+  CHECKPOINT_PERIOD: 200000
+  WARMUP_ITERS: 0
