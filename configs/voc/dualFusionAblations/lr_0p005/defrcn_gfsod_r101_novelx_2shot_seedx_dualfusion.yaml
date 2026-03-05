@@ -1,3 +1,0 @@
-_BASE_: "../baseline/defrcn_gfsod_r101_novelx_2shot_seedx_dualfusion.yaml"
-SOLVER:
-  BASE_LR: 0.005

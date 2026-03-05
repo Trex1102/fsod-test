@@ -14,5 +14,5 @@ MODEL:
     NORM: "GN"
     GN_NUM_GROUPS: 32
     USE_GATE: True
-    GATE_INIT: 0.0
+    GATE_INIT: 1.0
     ZERO_INIT_LAST: True

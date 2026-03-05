@@ -1,5 +1,0 @@
-_BASE_: "../baseline/defrcn_fsod_r101_novelx_5shot_seedx_dualfusion.yaml"
-MODEL:
-  DUAL_FUSION:
-    RPN_LEVELS: ["res3", "res4"]
-    RPN_INIT_LOGITS: [2.5, 1.5, -3.0]

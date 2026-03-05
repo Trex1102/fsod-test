@@ -21,11 +21,11 @@ SEED=0
 # python3 tools/model_surgery.py --dataset voc --method remove                                    \
 #     --src-path ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_final.pth                      \
 #     --save-dir ${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
-BASE_WEIGHT=checkpoints/voc/voc_qualityvaefsod_ablations/defrcn_det_r101_base${SPLIT_ID}/model_reset_remove.pth
+BASE_WEIGHT=${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_reset_remove.pth
 
 
 # ------------------------------ Novel Fine-tuning -------------------------------- #
-# Rerun only DeFRCN FSOD 1-shot in the same setting as run_voc_quality_vae_ablations.sh
+# Rerun only vanilla DeFRCN FSOD 1-shot using base-stage reset weights
 python3 tools/create_config.py --dataset voc --config_root configs/voc \
     --shot ${SHOT} --seed ${SEED} --setting fsod --split ${SPLIT_ID}
 

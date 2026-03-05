@@ -87,89 +87,6 @@ For ease of training and evaluation over multiple runs, we integrate the whole p
   ```
 * Please read the details of few-shot object detection pipeline in `run_*.sh`, you need change `IMAGENET_PRETRAIN*` to your path.
 
-### Dual-Fusion Ablations (Base -> Fine-tuning)
-
-This repo now includes a folderized ablation matrix under:
-
-```text
-configs/coco/dualFusionAblations/
-configs/voc/dualFusionAblations/
-```
-
-Each folder is one ablation setting (`baseline`, `norefine`, `roi_res5`, `origweights`, `rpn_no_res5`, `roi_res4_only`, `light512`, `lr_0p005`, `lr_0p0025`) and contains both base-stage and shot-stage configs.
-
-What each dual-fusion ablation tests:
-
-| Ablation folder | Main change vs `baseline` | What it tests |
-|---|---|---|
-| `baseline` | `USE_REFINE=True`, `ALIGN_CHANNELS=1024`, branch-biased init (`RPN=[2.0,1.5,0.5]`, `ROI=[2.0,1.5,-3.0]`), `RPN_LEVELS=[res3,res4,res5]`, `ROI_LEVELS=[res3,res4]` | Default dual-fusion setting |
-| `norefine` | `USE_REFINE=False` | Effect of removing post-fusion 3x3 refinement |
-| `roi_res5` | `ROI_LEVELS=[res3,res4,res5]`, `ROI_INIT_LOGITS=[2.0,1.5,0.5]` | Effect of adding `res5` into ROI fusion |
-| `origweights` | `RPN_INIT_LOGITS=[2,1,0]`, `ROI_INIT_LOGITS=[0,1,2]`, both branches use `res3/res4/res5` | Original semantic-bias weighting variant |
-| `rpn_no_res5` | `RPN_LEVELS=[res3,res4]` (drops `res5`) | How much RPN depends on high-level `res5` input |
-| `roi_res4_only` | `ROI_LEVELS=[res4]` | ROI classification/regression with only `res4` |
-| `light512` | `ALIGN_CHANNELS=512` | Lighter neck capacity / compute |
-| `lr_0p005` | `SOLVER.BASE_LR=0.005` | LR sensitivity (milder update) |
-| `lr_0p0025` | `SOLVER.BASE_LR=0.0025` | LR sensitivity (more conservative update) |
-
-Use `run_dual_fusion_ablations.sh` for end-to-end runs:
-
-```bash
-bash run_dual_fusion_ablations.sh \
-  --dataset coco \
-  --exp-name df_coco_baseline \
-  --ablation baseline \
-  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
-  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
-  --setting both \
-  --shots "1 2 3 5 10 30" \
-  --seeds "0"
-```
-
-VOC example:
-
-```bash
-bash run_dual_fusion_ablations.sh \
-  --dataset voc \
-  --split-id 1 \
-  --exp-name df_voc_s1 \
-  --ablation lr_0p005 \
-  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
-  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
-  --setting fsod \
-  --shots "1 2 3 5 10" \
-  --seeds "0 1 2 3 4 5 6 7 8 9"
-```
-
-Run all ablations (COCO):
-
-```bash
-for abl in baseline norefine roi_res5 origweights rpn_no_res5 roi_res4_only light512 lr_0p005 lr_0p0025; do
-  bash run_dual_fusion_ablations.sh \
-    --dataset coco \
-    --exp-name df_coco_all \
-    --ablation "${abl}" \
-    --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
-    --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
-    --setting both \
-    --shots "1 2 3 5 10 30" \
-    --seeds "0"
-done
-```
-
-What this script does:
-
-1. Base pre-training with the selected ablation base config.
-2. Model surgery (`remove` for FSOD and `randinit` for GFSOD).
-3. Novel fine-tuning for selected shots and seeds.
-4. Result summary generation via `tools/extract_results.py`.
-
-Important notes:
-
-1. It generates seed-specific temporary configs under `/tmp` and does not modify your config files.
-2. `--skip-base` can be used to reuse an existing base checkpoint in the same output directory.
-3. Results are saved under `checkpoints/<dataset>/<exp-name>/<ablation>/`.
-
 ### Adapter Ablations (Vanilla Forward Decoupling)
 
 This repo also includes adapter-based forward-decoupling ablations under:
@@ -269,16 +186,12 @@ Config folders:
 ```text
 configs/coco/vaeFsod/
 configs/voc/vaeFsod/
-configs/coco/qualityVaeFsod/
-configs/voc/qualityVaeFsod/
 ```
 
 Config intent:
 
 1. Base-stage configs (`defrcn_det_r101_base*_vaefsod.yaml`) keep VAE disabled.
 2. FSOD-stage configs (`defrcn_fsod_*_vaefsod.yaml`) enable VAE auxiliary classification with generated feature bank.
-3. Quality-stage configs are organized by ablation folder under `qualityVaeFsod/`.
-4. `qualityVaeFsod/baseline/` contains the original quality-VAE configs (moved from root).
 5. VAE paper settings are encoded in `MODEL.VAE_FSOD.*`:
    - latent/semantic dims = `512`,
    - encoder hidden = `4096` (3 FC encoder),
@@ -339,35 +252,9 @@ bash run_vae_fsod.sh \
   --seeds "0"
 ```
 
-Run all quality-VAE ablations (COCO):
-
-```bash
-bash run_quality_vae_ablations.sh \
-  --dataset coco \
-  --exp-name qvaefsod_coco_all \
-  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
-  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
-  --shots "1 2 3 5 10 30" \
-  --seeds "0"
-```
-
-Run selected quality ablations only:
-
-```bash
-bash run_quality_vae_ablations.sh \
-  --dataset voc \
-  --split-id 1 \
-  --exp-name qvaefsod_voc_subset \
-  --imagenet-pretrain /data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl \
-  --imagenet-pretrain-torch /data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth \
-  --ablations "baseline iou_only no_qaux" \
-  --shots "1 2 3 5 10" \
-  --seeds "0 1 2 3 4 5 6 7 8 9"
-```
-
 What `run_vae_fsod.sh` does:
 
-1. Base pre-training with the selected variant base config (`vaeFsod` or `qualityVaeFsod/<ablation>`).
+1. Base pre-training with the selected variant base config (`vaeFsod`).
 2. Model surgery (`remove`) for FSOD fine-tuning initialization.
 3. Train VAE on base-set RoI features (`tools/train_vae_fsod.py`):
    - `--variant norm`: paper-style Norm-VAE.
@@ -377,13 +264,11 @@ What `run_vae_fsod.sh` does:
    - generate class-conditional synthetic feature bank (`tools/generate_vae_fsod_features.py`),
    - fine-tune DeFRCN with VAE auxiliary classification loss.
 5. Summarize results via `tools/extract_results.py`.
-6. `run_quality_vae_ablations.sh` wraps step 1-5 and loops over quality ablation folders.
 
 Outputs are written to:
 
 ```text
 checkpoints/<dataset>/<exp-name>/vaeFsod/
-checkpoints/<dataset>/<exp-name>/qualityVaeFsod/<ablation>/
 ```
 
 ### Quantifying Proposal Bottleneck Gap (Vanilla DeFRCN)

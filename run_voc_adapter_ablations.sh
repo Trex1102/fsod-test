@@ -14,8 +14,7 @@ IMAGENET_PRETRAIN=.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl           
 IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to your path
 BASE_PRETRAIN=${BASE_PRETRAIN:-${IMAGENET_PRETRAIN}}
 
-ABLATIONS="shared light heavy ln rpn_only roi_only"
-# ABLATIONS="gate_init1
+ABLATIONS="heavy light shared"
 # SHOTS="1 2 3 5 10"
 SHOTS="1"
 SEEDS="0"
@@ -33,9 +32,9 @@ do
 
     # ------------------------------- Base Pre-train ---------------------------------- #
     # Reuse existing base-stage checkpoint; do not rerun this stage.
-    python3 main.py --num-gpus 1 --config-file ${BASE_CFG}                               \
-        --opts MODEL.WEIGHTS ${BASE_PRETRAIN}                                            \
-               OUTPUT_DIR ${BASE_STAGE_DIR}
+    # python3 main.py --num-gpus 1 --config-file ${BASE_CFG}                               \
+    #     --opts MODEL.WEIGHTS ${BASE_PRETRAIN}                                            \
+    #            OUTPUT_DIR ${BASE_STAGE_DIR}
 
     for setting in ${SETTINGS}
     do
@@ -55,9 +54,9 @@ do
 
         # ------------------------------ Model Preparation -------------------------------- #
         # Reuse existing surgery output; do not rerun this stage.
-        python3 tools/model_surgery.py --dataset voc --method ${SURGERY_METHOD}                 \
-            --src-path ${BASE_STAGE_DIR}/model_final.pth                                         \
-            --save-dir ${BASE_STAGE_DIR}
+        # python3 tools/model_surgery.py --dataset voc --method ${SURGERY_METHOD}                 \
+        #     --src-path ${BASE_STAGE_DIR}/model_final.pth                                         \
+        #     --save-dir ${BASE_STAGE_DIR}
 
 
         # ------------------------------ Novel Fine-tuning -------------------------------- #
