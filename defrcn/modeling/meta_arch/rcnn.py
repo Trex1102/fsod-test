@@ -71,7 +71,13 @@ class GeneralizedRCNN(nn.Module):
         if cfg.MODEL.ROI_HEADS.FREEZE_FEAT:
             for p in self.roi_heads.res5.parameters():
                 p.requires_grad = False
-            print("froze roi_box_head parameters")
+            if cfg.MODEL.ROI_HEADS.RES5_ADAPTER.ENABLE:
+                # Unfreeze only the adapter parameters — original res5 blocks stay frozen.
+                for p in self.roi_heads.res5.adapter_parameters():
+                    p.requires_grad = True
+                print("froze res5 block parameters (adapters remain trainable)")
+            else:
+                print("froze roi_box_head parameters")
 
     def forward(self, batched_inputs):
         if not self.training:

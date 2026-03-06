@@ -17,6 +17,7 @@ from detectron2.modeling.backbone.resnet import BottleneckBlock, make_stage
 from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
 from .box_head import build_box_head
 from .fast_rcnn import ROI_HEADS_OUTPUT_REGISTRY, FastRCNNOutputLayers, FastRCNNOutputs
+from .res5_adapter import Res5WithAdapters
 
 ROI_HEADS_REGISTRY = Registry("ROI_HEADS")
 ROI_HEADS_REGISTRY.__doc__ = """
@@ -375,6 +376,8 @@ class Res5ROIHeads(ROIHeads):
         )
 
         self.res5, out_channels = self._build_res5_block(cfg)
+        if cfg.MODEL.ROI_HEADS.RES5_ADAPTER.ENABLE:
+            self.res5 = Res5WithAdapters(self.res5, out_channels, cfg)
         output_layer = cfg.MODEL.ROI_HEADS.OUTPUT_LAYER
         self.box_predictor = ROI_HEADS_OUTPUT_REGISTRY.get(output_layer)(
             cfg, out_channels, self.num_classes, self.cls_agnostic_bbox_reg
