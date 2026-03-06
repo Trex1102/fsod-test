@@ -68,11 +68,14 @@ class Res5WithAdapters(nn.Module):
         gate_init     = float(adapter_cfg.GATE_INIT)
         zero_init     = bool(adapter_cfg.ZERO_INIT_LAST)
 
-        # Store original blocks; freeze them here so the caller does not need
-        # special-case logic — FREEZE_FEAT still freezes the adapter wrapper,
-        # but the adapters' parameters are re-enabled in rcnn.py after the
-        # general freeze call (see rcnn.py).
-        self.blocks = nn.ModuleList(list(res5_seq.children()))
+        # Store blocks as direct numbered attributes (e.g. self._block_0) so that
+        # the state_dict keys match the original nn.Sequential pattern ('0.*',
+        # '1.*', ...) used in the pretrained checkpoint.  Using nn.ModuleList
+        # would insert an extra 'blocks.' prefix and break weight loading.
+        blocks = list(res5_seq.children())
+        self._num_blocks = len(blocks)
+        for i, block in enumerate(blocks):
+            setattr(self, str(i), block)
 
         inner = max(int(round(out_channels * ratio)), min_channels)
         inner = min(inner, out_channels)
@@ -81,7 +84,7 @@ class Res5WithAdapters(nn.Module):
         self.use_gate  = use_gate
         self.gates     = nn.ParameterDict() if use_gate else None
 
-        for idx in range(len(self.blocks)):
+        for idx in range(self._num_blocks):
             if idx in after_blocks:
                 self.adapters[str(idx)] = _AdapterBlock(
                     out_channels, inner, norm_type, gn_groups, zero_init
@@ -92,8 +95,8 @@ class Res5WithAdapters(nn.Module):
                     )
 
     def forward(self, x):
-        for idx, block in enumerate(self.blocks):
-            x = block(x)
+        for idx in range(self._num_blocks):
+            x = getattr(self, str(idx))(x)
             key = str(idx)
             if key in self.adapters:
                 delta = self.adapters[key](x)
