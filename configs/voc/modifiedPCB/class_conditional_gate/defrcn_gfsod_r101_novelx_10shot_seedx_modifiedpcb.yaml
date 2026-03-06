@@ -1,0 +1,9 @@
+_BASE_: "../../adapterAblations/baseline/defrcn_gfsod_r101_novelx_10shot_seedx_adapter.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_CLASS_GATE: True
+  PCB_CLASS_GATE_MODE: "weaken"
+  PCB_CLASS_GATE_TINY_RATIO: 0.60
+  PCB_CLASS_GATE_MIN_QUALITY: 0.20
+  PCB_CLASS_GATE_WEAKEN: 0.35

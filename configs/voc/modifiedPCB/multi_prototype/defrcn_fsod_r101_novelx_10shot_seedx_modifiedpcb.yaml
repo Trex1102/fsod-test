@@ -1,0 +1,7 @@
+_BASE_: "../../adapterAblations/baseline/defrcn_fsod_r101_novelx_10shot_seedx_adapter.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_MULTIPROTO: True
+  PCB_MULTIPROTO_K: 3
+  PCB_MULTIPROTO_MATCH: "max"
