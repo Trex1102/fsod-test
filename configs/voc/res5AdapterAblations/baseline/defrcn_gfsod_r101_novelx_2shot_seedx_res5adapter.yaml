@@ -1,0 +1,13 @@
+_BASE_: "../../defrcn_gfsod_r101_novelx_2shot_seedx.yaml"
+MODEL:
+  ROI_HEADS:
+    RES5_ADAPTER:
+      ENABLE: True
+      AFTER_BLOCKS: [2]
+      BOTTLENECK_RATIO: 0.25
+      MIN_CHANNELS: 64
+      NORM: "GN"
+      GN_NUM_GROUPS: 32
+      USE_GATE: True
+      GATE_INIT: 0.0
+      ZERO_INIT_LAST: True

@@ -1,0 +1,4 @@
+_BASE_: "../baseline/defrcn_gfsod_r101_novelx_10shot_seedx_res5adapter.yaml"
+MODEL:
+  RPN:
+    FROZEN: True
