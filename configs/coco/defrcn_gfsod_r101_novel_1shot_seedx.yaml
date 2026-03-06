@@ -20,10 +20,10 @@ DATASETS:
   TRAIN: ('coco14_trainval_all_1shot_seedx',)
   TEST: ('coco14_test_all',)
 SOLVER:
-  IMS_PER_BATCH: 16
-  BASE_LR: 0.01
-  STEPS: (2560,)
-  MAX_ITER: 3200
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.005
+  STEPS: (5120,)
+  MAX_ITER: 6400
   CHECKPOINT_PERIOD: 100000
   WARMUP_ITERS: 0
 TEST:

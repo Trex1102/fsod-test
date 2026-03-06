@@ -23,10 +23,10 @@ DATASETS:
   TRAIN: ("voc_2007_trainval_allx_10shot_seedx", )
   TEST: ('voc_2007_test_allx',)
 SOLVER:
-  IMS_PER_BATCH: 16
-  BASE_LR: 0.01
-  STEPS: (3200,)
-  MAX_ITER: 4000
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.005
+  STEPS: (6400,)
+  MAX_ITER: 8000
   CHECKPOINT_PERIOD: 100000
   WARMUP_ITERS: 0
 TEST:
