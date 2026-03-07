@@ -9,7 +9,24 @@ from detectron2.config import global_cfg
 from detectron2.engine.train_loop import HookBase
 from detectron2.evaluation.testing import flatten_results_dict
 
-__all__ = ["EvalHookDeFRCN"]
+__all__ = ["EvalHookDeFRCN", "PrototypeInitHook"]
+
+
+class PrototypeInitHook(HookBase):
+    """
+    Runs prototype-based cls_score initialization once, before training iteration 0.
+    Skipped automatically when resuming from a mid-training checkpoint (iter > 0).
+    """
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def before_train(self):
+        if self.trainer.iter > 0:
+            # Resuming from a checkpoint — cls_score weights are already trained.
+            return
+        from defrcn.modeling.proto_init import init_cls_score_from_prototypes
+        init_cls_score_from_prototypes(self.trainer.model, self.cfg)
 
 
 class EvalHookDeFRCN(HookBase):

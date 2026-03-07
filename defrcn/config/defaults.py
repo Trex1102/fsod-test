@@ -108,6 +108,12 @@ _CC.MODEL.VAE_FSOD.AUG_PER_BOX = 10
 _CC.MODEL.VAE_FSOD.AUG_BOX_SCALE_MAX = 0.3
 _CC.MODEL.VAE_FSOD.MAX_ROIS = 200000
 
+# ------- Prototype Init --------- #
+_CC.MODEL.PROTO_INIT = CN()
+_CC.MODEL.PROTO_INIT.ENABLE = False
+# L2-normalize each class prototype before writing to cls_score.weight
+_CC.MODEL.PROTO_INIT.NORMALIZE = True
+
 # ------------- TEST ------------- #
 _CC.TEST.PCB_ENABLE = False
 _CC.TEST.PCB_MODELTYPE = 'resnet'             # res-like

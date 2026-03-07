@@ -15,7 +15,7 @@ from detectron2.utils.collect_env import collect_env_info
 from detectron2.utils.events import TensorboardXWriter, CommonMetricPrinter, JSONWriter
 from defrcn.data import *
 from defrcn.modeling import build_model
-from defrcn.engine.hooks import EvalHookDeFRCN
+from defrcn.engine.hooks import EvalHookDeFRCN, PrototypeInitHook
 from defrcn.checkpoint import DetectionCheckpointer
 from defrcn.solver import build_lr_scheduler, build_optimizer
 from defrcn.evaluation import DatasetEvaluator, inference_on_dataset, print_csv_format, verify_results
@@ -308,6 +308,7 @@ class DefaultTrainer(SimpleTrainer):
         ret = [
             hooks.IterationTimer(),
             hooks.LRScheduler(self.optimizer, self.scheduler),
+            PrototypeInitHook(self.cfg) if self.cfg.MODEL.PROTO_INIT.ENABLE else None,
             hooks.PreciseBN(
                 # Run at the same freq as (but before) evaluation.
                 cfg.TEST.EVAL_PERIOD,
