@@ -1,0 +1,16 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "uncertainty"
+  UNCERTAINTY:
+    ENABLE: True
+    FEATURE_DIM: 2048
+    NUM_MC_SAMPLES: 10
+    DROPOUT_RATE: 0.1
+    UNCERTAINTY_THRESHOLD: 0.3
+    FALLBACK_ALPHA: 0.7
+    USE_ENSEMBLE: False
+    ENSEMBLE_SIZE: 5

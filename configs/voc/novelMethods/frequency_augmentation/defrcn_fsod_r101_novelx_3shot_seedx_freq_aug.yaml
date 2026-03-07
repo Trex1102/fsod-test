@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_3shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "freq_aug"
+  FREQ_AUG:
+    ENABLE: True
+    LOW_FREQ_RATIO: 0.3
+    HIGH_FREQ_RATIO: 0.3
+    NUM_AUGMENTED: 3
+    MIX_ALPHA: 0.5
+    PRESERVE_NORM: True

@@ -1,0 +1,19 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_5shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "self_distill"
+  SELF_DISTILL:
+    ENABLE: True
+    CONFIDENCE_THRESHOLD: 0.9
+    MAX_PSEUDO_PER_CLASS: 20
+    PSEUDO_WEIGHT: 0.3
+    EMA_MOMENTUM: 0.99
+    MIN_SAMPLES_FOR_UPDATE: 3
+    TEMPERATURE: 1.0
+    USE_SOFT_LABELS: True
+    ENTROPY_THRESHOLD: 0.5
+    TWO_PASS_MODE: True
+    UPDATE_INTERVAL: 100

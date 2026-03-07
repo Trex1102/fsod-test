@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "clip"
+  CLIP_GROUND:
+    ENABLE: True
+    FEATURE_DIM: 2048
+    CLIP_MODEL: "ViT-B/32"
+    VISUAL_WEIGHT: 0.7
+    TEXT_WEIGHT: 0.3
+    USE_DESCRIPTIONS: True

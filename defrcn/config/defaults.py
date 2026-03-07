@@ -180,3 +180,74 @@ _CC.TEST.PCB_TRANS_ONLINE = False      # True=online (incremental), False=two-pa
 # ------------ Other ------------- #
 _CC.SOLVER.WEIGHT_DECAY = 5e-5
 _CC.MUTE_HEADER = True
+
+# ========== NOVEL METHODS ========== #
+# Novel prototype enhancement methods for few-shot detection.
+# These are modular extensions that wrap the base PCB.
+
+_CC.NOVEL_METHODS = CN()
+_CC.NOVEL_METHODS.ENABLE = False
+_CC.NOVEL_METHODS.METHOD = ""  # freq_aug, contrastive, self_distill, uncertainty, part_graph, clip
+
+# ----- 1) Frequency-Domain Prototype Augmentation ----- #
+_CC.NOVEL_METHODS.FREQ_AUG = CN()
+_CC.NOVEL_METHODS.FREQ_AUG.ENABLE = False
+_CC.NOVEL_METHODS.FREQ_AUG.LOW_FREQ_RATIO = 0.3      # Fraction of DCT coeffs as low-freq
+_CC.NOVEL_METHODS.FREQ_AUG.HIGH_FREQ_RATIO = 0.3     # Fraction of DCT coeffs as high-freq
+_CC.NOVEL_METHODS.FREQ_AUG.NUM_AUGMENTED = 3         # Augmented prototypes per original
+_CC.NOVEL_METHODS.FREQ_AUG.MIX_ALPHA = 0.5           # Interpolation factor for mixing
+_CC.NOVEL_METHODS.FREQ_AUG.PRESERVE_NORM = True      # Preserve L2 norm after augmentation
+
+# ----- 2) Contrastive Prototype Anchoring ----- #
+_CC.NOVEL_METHODS.CONTRASTIVE = CN()
+_CC.NOVEL_METHODS.CONTRASTIVE.ENABLE = False
+_CC.NOVEL_METHODS.CONTRASTIVE.FEATURE_DIM = 2048    # Input feature dimension
+_CC.NOVEL_METHODS.CONTRASTIVE.TEMPERATURE = 0.07    # Contrastive softmax temperature
+_CC.NOVEL_METHODS.CONTRASTIVE.MARGIN = 0.5          # Prototype separation margin
+_CC.NOVEL_METHODS.CONTRASTIVE.PROTO_MOMENTUM = 0.99 # EMA momentum for prototype updates
+_CC.NOVEL_METHODS.CONTRASTIVE.USE_HARD_NEGATIVES = True
+_CC.NOVEL_METHODS.CONTRASTIVE.NUM_HARD_NEGATIVES = 3
+_CC.NOVEL_METHODS.CONTRASTIVE.LOSS_WEIGHT = 0.1     # Weight for contrastive loss
+
+# ----- 3) Self-Distillation from Test-Time Predictions ----- #
+_CC.NOVEL_METHODS.SELF_DISTILL = CN()
+_CC.NOVEL_METHODS.SELF_DISTILL.ENABLE = False
+_CC.NOVEL_METHODS.SELF_DISTILL.CONFIDENCE_THRESHOLD = 0.9  # Min confidence for pseudo-labels
+_CC.NOVEL_METHODS.SELF_DISTILL.MAX_PSEUDO_PER_CLASS = 20   # Max pseudo-samples per class
+_CC.NOVEL_METHODS.SELF_DISTILL.PSEUDO_WEIGHT = 0.3         # Weight of pseudo vs real support
+_CC.NOVEL_METHODS.SELF_DISTILL.EMA_MOMENTUM = 0.99         # EMA for prototype updates
+_CC.NOVEL_METHODS.SELF_DISTILL.MIN_SAMPLES_FOR_UPDATE = 3  # Min pseudo-samples before update
+_CC.NOVEL_METHODS.SELF_DISTILL.TEMPERATURE = 1.0           # Temperature for soft labels
+_CC.NOVEL_METHODS.SELF_DISTILL.USE_SOFT_LABELS = True      # Use probability distribution
+_CC.NOVEL_METHODS.SELF_DISTILL.ENTROPY_THRESHOLD = 0.5     # Max entropy for accepting pseudo
+_CC.NOVEL_METHODS.SELF_DISTILL.TWO_PASS_MODE = True        # Two-pass vs online mode
+_CC.NOVEL_METHODS.SELF_DISTILL.UPDATE_INTERVAL = 100       # Images between prototype updates
+
+# ----- 4) Uncertainty-Weighted Prototype Matching ----- #
+_CC.NOVEL_METHODS.UNCERTAINTY = CN()
+_CC.NOVEL_METHODS.UNCERTAINTY.ENABLE = False
+_CC.NOVEL_METHODS.UNCERTAINTY.FEATURE_DIM = 2048           # Feature dimension
+_CC.NOVEL_METHODS.UNCERTAINTY.NUM_MC_SAMPLES = 10          # MC dropout samples
+_CC.NOVEL_METHODS.UNCERTAINTY.DROPOUT_RATE = 0.1           # Dropout rate
+_CC.NOVEL_METHODS.UNCERTAINTY.UNCERTAINTY_THRESHOLD = 0.3  # High uncertainty threshold
+_CC.NOVEL_METHODS.UNCERTAINTY.FALLBACK_ALPHA = 0.7         # Alpha when uncertain
+_CC.NOVEL_METHODS.UNCERTAINTY.USE_ENSEMBLE = False         # Use bootstrap ensemble
+_CC.NOVEL_METHODS.UNCERTAINTY.ENSEMBLE_SIZE = 5            # Ensemble size
+
+# ----- 5) Compositional Part-Graph Reasoning ----- #
+_CC.NOVEL_METHODS.PART_GRAPH = CN()
+_CC.NOVEL_METHODS.PART_GRAPH.ENABLE = False
+_CC.NOVEL_METHODS.PART_GRAPH.FEATURE_DIM = 2048     # Input feature dimension
+_CC.NOVEL_METHODS.PART_GRAPH.NUM_PARTS = 4          # Number of object parts
+_CC.NOVEL_METHODS.PART_GRAPH.PART_DIM = 256         # Part representation dimension
+_CC.NOVEL_METHODS.PART_GRAPH.NUM_LAYERS = 2         # Graph convolution layers
+_CC.NOVEL_METHODS.PART_GRAPH.SIMILARITY_MODE = "combined"  # graph, parts, combined
+
+# ----- 6) Cross-Modal Vision-Language Grounding (CLIP) ----- #
+_CC.NOVEL_METHODS.CLIP_GROUND = CN()
+_CC.NOVEL_METHODS.CLIP_GROUND.ENABLE = False
+_CC.NOVEL_METHODS.CLIP_GROUND.FEATURE_DIM = 2048    # Detector feature dimension
+_CC.NOVEL_METHODS.CLIP_GROUND.CLIP_MODEL = "ViT-B/32"  # CLIP model variant
+_CC.NOVEL_METHODS.CLIP_GROUND.VISUAL_WEIGHT = 0.7   # Weight for visual similarity
+_CC.NOVEL_METHODS.CLIP_GROUND.TEXT_WEIGHT = 0.3     # Weight for text similarity
+_CC.NOVEL_METHODS.CLIP_GROUND.USE_DESCRIPTIONS = True  # Use class descriptions

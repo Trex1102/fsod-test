@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_2shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "part_graph"
+  PART_GRAPH:
+    ENABLE: True
+    FEATURE_DIM: 2048
+    NUM_PARTS: 4
+    PART_DIM: 256
+    NUM_LAYERS: 2
+    SIMILARITY_MODE: "combined"

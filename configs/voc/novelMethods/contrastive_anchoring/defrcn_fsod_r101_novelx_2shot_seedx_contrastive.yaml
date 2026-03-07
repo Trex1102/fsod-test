@@ -1,0 +1,16 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_2shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "contrastive"
+  CONTRASTIVE:
+    ENABLE: True
+    FEATURE_DIM: 2048
+    TEMPERATURE: 0.07
+    MARGIN: 0.5
+    PROTO_MOMENTUM: 0.99
+    USE_HARD_NEGATIVES: True
+    NUM_HARD_NEGATIVES: 3
+    LOSS_WEIGHT: 0.1
