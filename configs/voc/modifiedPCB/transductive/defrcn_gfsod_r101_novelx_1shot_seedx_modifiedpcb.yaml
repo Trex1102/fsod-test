@@ -2,5 +2,7 @@ _BASE_: "../../defrcn_gfsod_r101_novelx_1shot_seedx.yaml"
 TEST:
   PCB_ENABLE: True
   PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
-  PCB_SCALE_AWARE: True
-  PCB_SCALE_THRESH: [0.01, 0.05]
+  PCB_TRANSDUCTIVE: True
+  PCB_TRANS_MIN_SCORE: 0.80
+  PCB_TRANS_MAX_PER_CLASS: 10
+  PCB_TRANS_PSEUDO_WEIGHT: 0.30

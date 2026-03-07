@@ -72,6 +72,13 @@ class PrototypicalCalibrationBlock:
         self.score_norm_power = float(cfg.TEST.PCB_SCORE_NORM_POWER)
         self.score_clamp_eps = float(cfg.TEST.PCB_SCORE_CLAMP_EPS)
 
+        # 8) Transductive inference
+        self.enable_transductive = bool(cfg.TEST.PCB_TRANSDUCTIVE)
+        self.trans_min_score = float(cfg.TEST.PCB_TRANS_MIN_SCORE)
+        self.trans_max_per_class = int(cfg.TEST.PCB_TRANS_MAX_PER_CLASS)
+        self.trans_pseudo_weight = float(cfg.TEST.PCB_TRANS_PSEUDO_WEIGHT)
+        self.trans_online = bool(cfg.TEST.PCB_TRANS_ONLINE)
+
         if self.multiproto_match not in {"max", "softmax"}:
             raise ValueError("TEST.PCB_MULTIPROTO_MATCH must be one of: max, softmax")
         if self.robust_mode not in {"trimmed_mean", "medoid"}:
@@ -93,7 +100,7 @@ class PrototypicalCalibrationBlock:
 
         logger.info(
             "PCB options | quality_weighted=%s multiproto=%s scale_aware=%s adaptive_alpha=%s "
-            "robust_agg=%s class_gate=%s score_norm=%s",
+            "robust_agg=%s class_gate=%s score_norm=%s transductive=%s(online=%s)",
             self.enable_quality_weighted,
             self.enable_multiproto,
             self.enable_scale_aware,
@@ -101,6 +108,8 @@ class PrototypicalCalibrationBlock:
             self.enable_robust_agg,
             self.enable_class_gate,
             self.enable_score_norm,
+            self.enable_transductive,
+            self.trans_online,
         )
 
     def build_model(self):
@@ -328,6 +337,11 @@ class PrototypicalCalibrationBlock:
                 class_qualities[cls].append(float(qualities[i].item()))
                 class_areas[cls].append(float(areas[i].item()))
 
+        # Save raw support data so transductive rebuild can blend real + pseudo.
+        self._real_class_features = {cls: list(v) for cls, v in class_features.items()}
+        self._real_class_qualities = {cls: list(v) for cls, v in class_qualities.items()}
+        self._real_class_areas = {cls: list(v) for cls, v in class_areas.items()}
+
         prototypes_dict = {}
         self.class_support_stats = {}
         self.class_reliability = {}
@@ -491,6 +505,152 @@ class PrototypicalCalibrationBlock:
             scores[i] = torch.tensor(fused, device=score_device, dtype=score_dtype)
 
         return dts
+
+    def collect_pseudo(self, inputs, dts, pseudo_dict):
+        """Collect high-confidence detections as pseudo-support samples.
+
+        Extracted features are accumulated into pseudo_dict:
+            {cls: {"features": [Tensor], "scores": [float], "areas": [float]}}
+
+        Keeps the trans_max_per_class highest-score samples per class.
+        """
+        if len(dts) == 0 or len(dts[0]["instances"]) == 0:
+            return
+
+        img = cv2.imread(inputs[0]["file_name"])
+        if img is None:
+            return
+        img_h, img_w = img.shape[0], img.shape[1]
+
+        instances = dts[0]["instances"]
+        scores = instances.scores.cpu()
+        pred_boxes = instances.pred_boxes
+        pred_classes = instances.pred_classes.cpu()
+
+        keep_mask = scores >= self.trans_min_score
+        if not keep_mask.any():
+            return
+
+        hi_boxes = pred_boxes[keep_mask]
+        hi_classes = pred_classes[keep_mask]
+        hi_scores = scores[keep_mask]
+
+        if len(hi_boxes) == 0:
+            return
+
+        features = self.extract_roi_features(img, [hi_boxes.to(self.device)]).detach().cpu()
+        box_tensor = hi_boxes.tensor.cpu()
+        areas = self._normalized_area(box_tensor, img_h, img_w).cpu()
+
+        for i in range(len(hi_classes)):
+            cls = int(hi_classes[i].item())
+            if cls in self.exclude_cls:
+                continue
+
+            if cls not in pseudo_dict:
+                pseudo_dict[cls] = {"features": [], "scores": [], "areas": []}
+
+            entry = pseudo_dict[cls]
+            cur_score = float(hi_scores[i].item())
+
+            if len(entry["features"]) < self.trans_max_per_class:
+                entry["features"].append(features[i])
+                entry["scores"].append(cur_score)
+                entry["areas"].append(float(areas[i].item()))
+            else:
+                # Replace the lowest-score pseudo sample if this one is better.
+                min_score = min(entry["scores"])
+                if cur_score > min_score:
+                    min_idx = entry["scores"].index(min_score)
+                    entry["features"][min_idx] = features[i]
+                    entry["scores"][min_idx] = cur_score
+                    entry["areas"][min_idx] = float(areas[i].item())
+
+    def rebuild_with_pseudo(self, pseudo_dict):
+        """Rebuild prototype bank by blending real K-shot support with pseudo-labels.
+
+        Pseudo quality is scaled by self.trans_pseudo_weight so that the real
+        support always dominates when quality-weighted aggregation is used.
+        Classes that only appear in pseudo_dict (not seen in K-shot) are also added.
+        """
+        if not pseudo_dict:
+            logger.info("Transductive: no pseudo-labels collected; keeping original prototypes.")
+            return
+
+        new_prototypes = {}
+        new_support_stats = {}
+        new_reliability = {}
+        new_gate_factor = {}
+        new_temperature = {}
+
+        all_cls = set(list(self._real_class_features.keys()) + list(pseudo_dict.keys()))
+
+        for cls in all_cls:
+            real_feat_list = self._real_class_features.get(cls, [])
+            real_qual_list = self._real_class_qualities.get(cls, [])
+            real_area_list = self._real_class_areas.get(cls, [])
+
+            pseudo_info = pseudo_dict.get(cls, {})
+            pseudo_feat_list = pseudo_info.get("features", [])
+            pseudo_score_list = pseudo_info.get("scores", [])
+            pseudo_area_list = pseudo_info.get("areas", [])
+
+            if not real_feat_list and not pseudo_feat_list:
+                continue
+
+            if real_feat_list:
+                real_feats = torch.stack(real_feat_list, dim=0)
+                real_quals = torch.tensor(real_qual_list, dtype=real_feats.dtype)
+                real_areas = torch.tensor(real_area_list, dtype=real_feats.dtype)
+
+            if pseudo_feat_list:
+                pseudo_feats = torch.stack(pseudo_feat_list, dim=0)
+                # Scale by pseudo_weight so real support dominates in quality-weighted mean.
+                pseudo_quals = (
+                    torch.tensor(pseudo_score_list, dtype=pseudo_feats.dtype)
+                    * self.trans_pseudo_weight
+                )
+                pseudo_areas_t = torch.tensor(pseudo_area_list, dtype=pseudo_feats.dtype)
+
+            if real_feat_list and pseudo_feat_list:
+                feats = torch.cat([real_feats, pseudo_feats], dim=0)
+                quals = torch.cat([real_quals, pseudo_quals], dim=0)
+                areas = torch.cat([real_areas, pseudo_areas_t], dim=0)
+            elif real_feat_list:
+                feats, quals, areas = real_feats, real_quals, real_areas
+            else:
+                feats, quals, areas = pseudo_feats, pseudo_quals, pseudo_areas_t
+
+            stats = self._compute_class_stats(feats, quals, areas)
+            new_support_stats[cls] = stats
+            new_reliability[cls] = float(stats["reliability"])
+            new_gate_factor[cls] = self._build_gate_factor(stats)
+            new_temperature[cls] = self._build_temperature(stats)
+
+            class_entry = {"global": self._build_proto_bank(feats, quals), "scale": {}}
+            if self.enable_scale_aware:
+                bin_ids = torch.tensor(
+                    [self._area_bin(float(a.item())) for a in areas], dtype=torch.long
+                )
+                for bid in [0, 1, 2]:
+                    idx = torch.nonzero(bin_ids == bid, as_tuple=False).flatten()
+                    if idx.numel() == 0:
+                        continue
+                    class_entry["scale"][bid] = self._build_proto_bank(feats[idx], quals[idx])
+            new_prototypes[cls] = class_entry
+
+        self.prototypes = new_prototypes
+        self.class_support_stats = new_support_stats
+        self.class_reliability = new_reliability
+        self.class_gate_factor = new_gate_factor
+        self.class_temperature = new_temperature
+
+        logger.info(
+            "Transductive: rebuilt prototypes. real_classes=%d pseudo_classes=%d total=%d",
+            len(self._real_class_features),
+            len(pseudo_dict),
+            len(new_prototypes),
+        )
 
     def clsid_filter(self):
         dsname = self.cfg.DATASETS.TEST[0]

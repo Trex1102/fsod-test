@@ -1,4 +1,4 @@
-_BASE_: "../../adapterAblations/baseline/defrcn_fsod_r101_novelx_5shot_seedx_adapter.yaml"
+_BASE_: "../../defrcn_fsod_r101_novelx_5shot_seedx.yaml"
 TEST:
   PCB_ENABLE: True
   PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"

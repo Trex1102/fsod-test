@@ -89,6 +89,24 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
         logger.info("Start initializing PCB module, please wait a seconds...")
         pcb = PrototypicalCalibrationBlock(cfg)
 
+    # Two-pass transductive: collect pseudo-labels in pass 1, rebuild, then evaluate in pass 2.
+    if pcb is not None and cfg.TEST.PCB_TRANSDUCTIVE and not cfg.TEST.PCB_TRANS_ONLINE:
+        logger.info(
+            "Transductive inference pass 1: collecting pseudo-labels over %d images...",
+            len(data_loader),
+        )
+        pseudo_dict = {}
+        with inference_context(model), torch.no_grad():
+            for inputs in data_loader:
+                outputs = model(inputs)
+                outputs = pcb.execute_calibration(inputs, outputs)
+                pcb.collect_pseudo(inputs, outputs, pseudo_dict)
+        pcb.rebuild_with_pseudo(pseudo_dict)
+        logger.info("Transductive inference pass 2: final evaluation...")
+
+    # Online transductive: accumulate pseudo across images, rebuild after each.
+    online_pseudo = {} if (pcb is not None and cfg.TEST.PCB_TRANSDUCTIVE and cfg.TEST.PCB_TRANS_ONLINE) else None
+
     logger.info("Start inference on {} images".format(len(data_loader)))
     total = len(data_loader)  # inference data loader must have a fixed length
     evaluator.reset()
@@ -107,6 +125,9 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
             outputs = model(inputs)
             if cfg.TEST.PCB_ENABLE:
                 outputs = pcb.execute_calibration(inputs, outputs)
+                if online_pseudo is not None:
+                    pcb.collect_pseudo(inputs, outputs, online_pseudo)
+                    pcb.rebuild_with_pseudo(online_pseudo)
             # CPU-only runs should skip CUDA synchronization.
             if torch.cuda.is_available():
                 torch.cuda.synchronize()

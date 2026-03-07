@@ -170,6 +170,13 @@ _CC.TEST.PCB_SCORE_NORM_MAX_TEMP = 2.5
 _CC.TEST.PCB_SCORE_NORM_POWER = 1.0
 _CC.TEST.PCB_SCORE_CLAMP_EPS = 1e-4
 
+# 8) Transductive inference (test-time prototype expansion)
+_CC.TEST.PCB_TRANSDUCTIVE = False
+_CC.TEST.PCB_TRANS_MIN_SCORE = 0.80    # confidence threshold for pseudo-labels
+_CC.TEST.PCB_TRANS_MAX_PER_CLASS = 10  # max pseudo samples per class
+_CC.TEST.PCB_TRANS_PSEUDO_WEIGHT = 0.30  # pseudo quality scale factor vs real support
+_CC.TEST.PCB_TRANS_ONLINE = False      # True=online (incremental), False=two-pass
+
 # ------------ Other ------------- #
 _CC.SOLVER.WEIGHT_DECAY = 5e-5
 _CC.MUTE_HEADER = True
