@@ -64,8 +64,8 @@ do
 
                 BASE_CONFIG_PATH=configs/voc/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}.yaml
 
-                BASELINE_TEMPLATE=configs/voc/protoInit/baseline/defrcn_${setting}_r101_novelx_${shot}shot_seedx_res5adapter.yaml
-                BASELINE_CONFIG_PATH=configs/voc/protoInit/baseline/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_res5adapter.yaml
+                BASELINE_TEMPLATE=configs/voc/protoInit/baseline/defrcn_${setting}_r101_novelx_${shot}shot_seedx_proto_init.yaml
+                BASELINE_CONFIG_PATH=configs/voc/protoInit/baseline/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_proto_init.yaml
                 cp ${BASELINE_TEMPLATE} ${BASELINE_CONFIG_PATH}
                 sed -i "s/novelx/novel${SPLIT_ID}/g" ${BASELINE_CONFIG_PATH}
                 sed -i "s/seedx/seed${seed}/g" ${BASELINE_CONFIG_PATH}
@@ -73,8 +73,8 @@ do
                 if [ "${ablation}" = "baseline" ]; then
                     CONFIG_PATH=${BASELINE_CONFIG_PATH}
                 else
-                    ABLATION_TEMPLATE=${ABLATION_TEMPLATE_DIR}/defrcn_${setting}_r101_novelx_${shot}shot_seedx_res5adapter.yaml
-                    CONFIG_PATH=${ABLATION_TEMPLATE_DIR}/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_res5adapter.yaml
+                    ABLATION_TEMPLATE=${ABLATION_TEMPLATE_DIR}/defrcn_${setting}_r101_novelx_${shot}shot_seedx_proto_init.yaml
+                    CONFIG_PATH=${ABLATION_TEMPLATE_DIR}/defrcn_${setting}_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_proto_init.yaml
                     cp ${ABLATION_TEMPLATE} ${CONFIG_PATH}
                     sed -i "s/novelx/novel${SPLIT_ID}/g" ${CONFIG_PATH}
                     sed -i "s/seedx/seed${seed}/g" ${CONFIG_PATH}
