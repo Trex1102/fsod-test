@@ -116,11 +116,59 @@ _CC.MODEL.PROTO_INIT.NORMALIZE = True
 
 # ------------- TEST ------------- #
 _CC.TEST.PCB_ENABLE = False
-_CC.TEST.PCB_MODELTYPE = 'resnet'             # res-like
+_CC.TEST.PCB_MODELTYPE = "resnet"             # res-like
 _CC.TEST.PCB_MODELPATH = ""
 _CC.TEST.PCB_ALPHA = 0.50
 _CC.TEST.PCB_UPPER = 1.0
 _CC.TEST.PCB_LOWER = 0.05
+
+# PCB inference-only modular options
+# 1) Quality-weighted prototypes
+_CC.TEST.PCB_QUALITY_WEIGHTED = False
+_CC.TEST.PCB_QUALITY_POWER = 1.0
+_CC.TEST.PCB_QUALITY_MIN_WEIGHT = 0.05
+_CC.TEST.PCB_TINY_AREA_THRESH = 0.01
+_CC.TEST.PCB_AREA_POWER = 0.5
+_CC.TEST.PCB_CROWD_PENALTY = 0.15
+
+# 2) Multi-prototype per class
+_CC.TEST.PCB_MULTIPROTO = False
+_CC.TEST.PCB_MULTIPROTO_K = 2
+_CC.TEST.PCB_MULTIPROTO_ITERS = 8
+_CC.TEST.PCB_MULTIPROTO_MATCH = "max"  # max, softmax
+_CC.TEST.PCB_MULTIPROTO_TEMP = 0.07
+
+# 3) Scale-aware matching
+_CC.TEST.PCB_SCALE_AWARE = False
+_CC.TEST.PCB_SCALE_THRESH = [0.01, 0.05]  # normalized box area thresholds
+
+# 4) Adaptive alpha fusion
+_CC.TEST.PCB_ADAPTIVE_ALPHA = False
+_CC.TEST.PCB_ALPHA_MIN = 0.30
+_CC.TEST.PCB_ALPHA_MAX = 0.98
+_CC.TEST.PCB_ALPHA_RELIABILITY_POWER = 1.0
+_CC.TEST.PCB_ALPHA_SIM_POWER = 1.0
+_CC.TEST.PCB_ALPHA_USE_SIMILARITY = True
+
+# 5) Outlier-robust aggregation
+_CC.TEST.PCB_ROBUST_AGG = False
+_CC.TEST.PCB_ROBUST_MODE = "trimmed_mean"  # trimmed_mean, medoid
+_CC.TEST.PCB_TRIM_RATIO = 0.2
+
+# 6) Class-conditional calibration gating
+_CC.TEST.PCB_CLASS_GATE = False
+_CC.TEST.PCB_CLASS_GATE_MODE = "weaken"  # weaken, skip
+_CC.TEST.PCB_CLASS_GATE_TINY_RATIO = 0.60
+_CC.TEST.PCB_CLASS_GATE_MIN_QUALITY = 0.20
+_CC.TEST.PCB_CLASS_GATE_WEAKEN = 0.35
+_CC.TEST.PCB_CLASS_GATE_MIN_SAMPLES = 2
+
+# 7) Post-calibration score normalization
+_CC.TEST.PCB_SCORE_NORM = False
+_CC.TEST.PCB_SCORE_NORM_BASE_TEMP = 1.0
+_CC.TEST.PCB_SCORE_NORM_MAX_TEMP = 2.5
+_CC.TEST.PCB_SCORE_NORM_POWER = 1.0
+_CC.TEST.PCB_SCORE_CLAMP_EPS = 1e-4
 
 # ------------ Other ------------- #
 _CC.SOLVER.WEIGHT_DECAY = 5e-5

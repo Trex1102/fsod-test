@@ -1,0 +1,7 @@
+_BASE_: "../../adapterAblations/baseline/defrcn_det_r101_base1_adapter.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_ADAPTIVE_ALPHA: True
+  PCB_ALPHA_MIN: 0.50
+  PCB_ALPHA_MAX: 0.99

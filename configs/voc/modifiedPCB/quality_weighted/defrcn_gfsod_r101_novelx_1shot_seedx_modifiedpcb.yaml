@@ -1,0 +1,5 @@
+_BASE_: "../../adapterAblations/baseline/defrcn_gfsod_r101_novelx_1shot_seedx_adapter.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_QUALITY_WEIGHTED: True

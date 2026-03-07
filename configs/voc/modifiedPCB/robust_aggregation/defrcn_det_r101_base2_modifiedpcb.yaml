@@ -1,0 +1,7 @@
+_BASE_: "../../adapterAblations/baseline/defrcn_det_r101_base2_adapter.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_ROBUST_AGG: True
+  PCB_ROBUST_MODE: "trimmed_mean"
+  PCB_TRIM_RATIO: 0.20
