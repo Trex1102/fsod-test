@@ -4,14 +4,24 @@ set -euo pipefail
 EXP_NAME=voc_modified_pcb
 BASE_EXP_NAME=vanilla_defrcn
 SPLIT_ID=${1:-}
+RUN_MODE=${2:-${RUN_MODE:-"finetune"}}
 
 if [ -z "${SPLIT_ID}" ]; then
-    echo "Usage: bash run_voc_modified_pcb.sh <split_id>"
+    echo "Usage: bash run_voc_modified_pcb.sh <split_id> [run_mode]"
+    echo ""
+    echo "Run modes:"
+    echo "  finetune                Fine-tune modified PCB models from vanilla base weights"
+    echo "  infer_pretrained_novel  Eval-only using pretrained vanilla novel checkpoints"
+    echo ""
+    echo "Examples:"
+    echo "  bash run_voc_modified_pcb.sh 1"
+    echo "  bash run_voc_modified_pcb.sh 1 infer_pretrained_novel"
     exit 1
 fi
 
 SAVE_DIR=checkpoints/voc/${EXP_NAME}
 BASE_SAVE_DIR=${BASE_SAVE_DIR:-checkpoints/voc/${BASE_EXP_NAME}}
+PRETRAINED_NOVEL_ROOT=${PRETRAINED_NOVEL_ROOT:-${BASE_SAVE_DIR}}
 IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth
 
 # If 1, skip shot runs that already have inference/res_final.json.
@@ -22,10 +32,36 @@ GPU_WAIT_RETRIES=${GPU_WAIT_RETRIES:-0}
 GPU_WAIT_SEC=${GPU_WAIT_SEC:-15}
 TRAIN_RETRIES=${TRAIN_RETRIES:-1}
 
-MODS=${MODS:-"multi_prototype scale_aware adaptive_alpha robust_aggregation class_conditional_gate score_normalization transductive"}
-SHOTS=${SHOTS:-"10"}
+MODS=${MODS:-"transductive"}
+SHOTS=${SHOTS:-"1 10"}
 SEEDS=${SEEDS:-"0"}
 SETTINGS=${SETTINGS:-"fsod"}  # fsod | gfsod | "fsod gfsod"
+
+case "${RUN_MODE}" in
+    finetune|train|base)
+        RUN_MODE="finetune"
+        RUN_MODE_DESC="fine-tune from vanilla base weights"
+        ROOT_SAVE_DIR=${SAVE_DIR}
+        ;;
+    infer_pretrained_novel|pretrained_novel|eval_pretrained_novel)
+        RUN_MODE="infer_pretrained_novel"
+        RUN_MODE_DESC="eval-only from pretrained vanilla novel checkpoints"
+        ROOT_SAVE_DIR=${SAVE_DIR}/pretrainedNovelEval
+        ;;
+    *)
+        echo "Unknown run_mode: ${RUN_MODE}"
+        echo "Available run modes: finetune, infer_pretrained_novel"
+        exit 1
+        ;;
+esac
+
+echo "[INFO] split=${SPLIT_ID} run_mode=${RUN_MODE} (${RUN_MODE_DESC})"
+echo "[INFO] mods=${MODS} settings=${SETTINGS} shots=${SHOTS} seeds=${SEEDS}"
+if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
+    echo "[INFO] pretrained_novel_root=${PRETRAINED_NOVEL_ROOT}"
+else
+    echo "[INFO] base_save_dir=${BASE_SAVE_DIR}"
+fi
 
 check_gpu_ready() {
     local out
@@ -60,27 +96,37 @@ wait_for_gpu() {
     done
 }
 
-run_main_train() {
+run_main_job() {
     local cfg_path="$1"
     local model_weights="$2"
     local output_dir="$3"
 
     local attempt=1
+    local main_args=(--num-gpus 1)
+    if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
+        main_args+=(--eval-only)
+    fi
+    main_args+=(
+        --config-file "${cfg_path}"
+        --opts
+        MODEL.WEIGHTS "${model_weights}"
+        OUTPUT_DIR "${output_dir}"
+        TEST.PCB_MODELPATH "${IMAGENET_PRETRAIN_TORCH}"
+    )
+
     while [ "${attempt}" -le "${TRAIN_RETRIES}" ]; do
         wait_for_gpu
-        if python3 main.py --num-gpus 1 --config-file "${cfg_path}" \
-            --opts MODEL.WEIGHTS "${model_weights}" OUTPUT_DIR "${output_dir}" \
-                   TEST.PCB_MODELPATH "${IMAGENET_PRETRAIN_TORCH}"; then
+        if python3 main.py "${main_args[@]}"; then
             return 0
         fi
 
         if [ "${attempt}" -ge "${TRAIN_RETRIES}" ]; then
-            echo "[ERROR] Training failed after ${TRAIN_RETRIES} attempt(s)."
+            echo "[ERROR] main.py failed after ${TRAIN_RETRIES} attempt(s)."
             return 1
         fi
 
         attempt=$((attempt + 1))
-        echo "[WARN] Training failed, retrying attempt ${attempt}/${TRAIN_RETRIES} ..."
+        echo "[WARN] ${RUN_MODE} run failed, retrying attempt ${attempt}/${TRAIN_RETRIES} ..."
         sleep 5
     done
 }
@@ -101,12 +147,12 @@ setting_is_done() {
 
 for mod in ${MODS}
 do
-    MOD_SAVE_DIR=${SAVE_DIR}/${mod}
+    MOD_SAVE_DIR=${ROOT_SAVE_DIR}/${mod}
     BASE_STAGE_DIR=${BASE_SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}
 
     mkdir -p "${MOD_SAVE_DIR}"
 
-    if [ ! -d "${BASE_STAGE_DIR}" ]; then
+    if [ "${RUN_MODE}" = "finetune" ] && [ ! -d "${BASE_STAGE_DIR}" ]; then
         echo "Missing vanilla base-stage directory: ${BASE_STAGE_DIR}"
         echo "Available vanilla_defrcn base directories:"
         find "${BASE_SAVE_DIR}" -maxdepth 1 -mindepth 1 -type d | sort
@@ -115,18 +161,22 @@ do
 
     for setting in ${SETTINGS}
     do
-        if [ "${setting}" = "fsod" ]; then
-            BASE_WEIGHT=${BASE_STAGE_DIR}/model_reset_remove.pth
-        elif [ "${setting}" = "gfsod" ]; then
-            BASE_WEIGHT=${BASE_STAGE_DIR}/model_reset_surgery.pth
-        else
+        if [ "${setting}" != "fsod" ] && [ "${setting}" != "gfsod" ]; then
             echo "Unsupported setting: ${setting}. Use fsod, gfsod, or both via SETTINGS=\"fsod gfsod\"."
             exit 1
         fi
 
-        if [ ! -f "${BASE_WEIGHT}" ]; then
-            echo "Missing vanilla base weight for setting=${setting}: ${BASE_WEIGHT}"
-            exit 1
+        if [ "${RUN_MODE}" = "finetune" ]; then
+            if [ "${setting}" = "fsod" ]; then
+                BASE_WEIGHT=${BASE_STAGE_DIR}/model_reset_remove.pth
+            else
+                BASE_WEIGHT=${BASE_STAGE_DIR}/model_reset_surgery.pth
+            fi
+
+            if [ ! -f "${BASE_WEIGHT}" ]; then
+                echo "Missing vanilla base weight for setting=${setting}: ${BASE_WEIGHT}"
+                exit 1
+            fi
         fi
 
         SETTING_SAVE_DIR=${MOD_SAVE_DIR}/${setting}/split${SPLIT_ID}
@@ -163,7 +213,18 @@ do
                 sed -i "s/novelx/novel${SPLIT_ID}/g" "${MOD_CONFIG_PATH}"
                 sed -i "s/seedx/seed${seed}/g" "${MOD_CONFIG_PATH}"
 
-                run_main_train "${MOD_CONFIG_PATH}" "${BASE_WEIGHT}" "${OUTPUT_DIR}"
+                if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
+                    MODEL_WEIGHT=${PRETRAINED_NOVEL_ROOT}/split${SPLIT_ID}/${shot}shot_seed${seed}/model_final.pth
+                    if [ ! -f "${MODEL_WEIGHT}" ]; then
+                        echo "Missing pretrained novel weight: ${MODEL_WEIGHT}"
+                        echo "Set PRETRAINED_NOVEL_ROOT or add the checkpoint for split=${SPLIT_ID}, shot=${shot}, seed=${seed}."
+                        exit 1
+                    fi
+                else
+                    MODEL_WEIGHT=${BASE_WEIGHT}
+                fi
+
+                run_main_job "${MOD_CONFIG_PATH}" "${MODEL_WEIGHT}" "${OUTPUT_DIR}"
 
                 rm -f "${MOD_CONFIG_PATH}" "${BASE_CONFIG_PATH}" "${OUTPUT_DIR}/model_final.pth"
             done
