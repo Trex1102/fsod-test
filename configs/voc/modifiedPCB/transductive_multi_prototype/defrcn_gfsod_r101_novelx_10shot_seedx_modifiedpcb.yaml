@@ -1,0 +1,11 @@
+_BASE_: "../../defrcn_gfsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_TRANSDUCTIVE: True
+  PCB_TRANS_MIN_SCORE: 0.70
+  PCB_TRANS_MAX_PER_CLASS: 5
+  PCB_TRANS_PSEUDO_WEIGHT: 0.30
+  PCB_MULTIPROTO: True
+  PCB_MULTIPROTO_K: 3
+  PCB_MULTIPROTO_MATCH: "max"

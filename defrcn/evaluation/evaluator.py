@@ -105,9 +105,23 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
         pseudo_dict = {}
         with inference_context(model), torch.no_grad():
             for inputs in data_loader:
+                cur_idx = sum(len(v.get("features", [])) for v in pseudo_dict.values())
                 outputs = model(inputs)
-                outputs = pcb.execute_calibration(inputs, outputs)
+                if cfg.TEST.PCB_TRANS_PSEUDO_CALIBRATED:
+                    outputs = pcb.execute_calibration(inputs, outputs, allow_reassign=False)
                 pcb.collect_pseudo(inputs, outputs, pseudo_dict)
+                new_idx = sum(len(v.get("features", [])) for v in pseudo_dict.values())
+                if new_idx > 0 and (new_idx // max(cfg.TEST.PCB_TRANS_MAX_PER_CLASS, 1)) != (cur_idx // max(cfg.TEST.PCB_TRANS_MAX_PER_CLASS, 1)):
+                    logger.info(
+                        "Transductive pass 1 progress: pseudo_classes=%d pseudo_samples=%d",
+                        len(pseudo_dict),
+                        new_idx,
+                    )
+            logger.info(
+                "Transductive pass 1 complete: pseudo_classes=%d pseudo_samples=%d",
+                len(pseudo_dict),
+                sum(len(v.get('features', [])) for v in pseudo_dict.values()),
+            )
         pcb.rebuild_with_pseudo(pseudo_dict)
         logger.info("Transductive inference pass 2: final evaluation...")
 

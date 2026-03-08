@@ -170,11 +170,29 @@ _CC.TEST.PCB_SCORE_NORM_MAX_TEMP = 2.5
 _CC.TEST.PCB_SCORE_NORM_POWER = 1.0
 _CC.TEST.PCB_SCORE_CLAMP_EPS = 1e-4
 
-# 8) Transductive inference (test-time prototype expansion)
+# 8) Prototype-based class reassignment
+_CC.TEST.PCB_PROTO_REASSIGN = False
+_CC.TEST.PCB_PROTO_REASSIGN_MIN_SCORE = 0.05
+_CC.TEST.PCB_PROTO_REASSIGN_MAX_SCORE = 0.80
+_CC.TEST.PCB_PROTO_REASSIGN_MIN_SIM = 0.75
+_CC.TEST.PCB_PROTO_REASSIGN_MARGIN = 0.05
+
+# 9) Transductive inference (test-time prototype expansion)
 _CC.TEST.PCB_TRANSDUCTIVE = False
 _CC.TEST.PCB_TRANS_MIN_SCORE = 0.80    # confidence threshold for pseudo-labels
 _CC.TEST.PCB_TRANS_MAX_PER_CLASS = 10  # max pseudo samples per class
 _CC.TEST.PCB_TRANS_PSEUDO_WEIGHT = 0.30  # pseudo quality scale factor vs real support
+_CC.TEST.PCB_TRANS_PSEUDO_CALIBRATED = True  # use calibrated detections in pass-1 pseudo mining
+_CC.TEST.PCB_TRANS_MIN_SIM = 0.0       # min cosine similarity to current class prototype
+_CC.TEST.PCB_TRANS_SCORE_POWER = 1.0   # detection-score exponent when ranking pseudo support
+_CC.TEST.PCB_TRANS_SIM_POWER = 2.0     # prototype-similarity exponent when ranking pseudo support
+_CC.TEST.PCB_TRANS_PSEUDO_CAP = 0.75   # cap total pseudo weight relative to real support weight
+_CC.TEST.PCB_TRANS_FORCE_WEIGHTED = True  # always use weighted rebuild when pseudo support exists
+_CC.TEST.PCB_TRANS_GATE_ENABLED = False  # weaken PCB when pseudo support is weak
+_CC.TEST.PCB_TRANS_GATE_MIN_SCORE = 0.80
+_CC.TEST.PCB_TRANS_GATE_MIN_SIM = 0.70
+_CC.TEST.PCB_TRANS_GATE_MIN_COUNT = 3
+_CC.TEST.PCB_TRANS_GATE_WEAKEN = 0.10
 _CC.TEST.PCB_TRANS_ONLINE = False      # True=online (incremental), False=two-pass
 
 # ------------ Other ------------- #

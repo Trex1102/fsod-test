@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EXP_NAME=voc_modified_pcb
-BASE_EXP_NAME=vanilla_defrcn
+EXP_NAME=${EXP_NAME:-voc_modified_pcb_new}
+BASE_EXP_NAME=${BASE_EXP_NAME:-vanilla_defrcn}
 SPLIT_ID=${1:-}
-RUN_MODE=${2:-${RUN_MODE:-"finetune"}}
+RUN_MODE=${2:-${RUN_MODE:-"infer_pretrained_novel"}}
 
 if [ -z "${SPLIT_ID}" ]; then
     echo "Usage: bash run_voc_modified_pcb.sh <split_id> [run_mode]"
@@ -32,10 +32,11 @@ GPU_WAIT_RETRIES=${GPU_WAIT_RETRIES:-0}
 GPU_WAIT_SEC=${GPU_WAIT_SEC:-15}
 TRAIN_RETRIES=${TRAIN_RETRIES:-1}
 
-MODS=${MODS:-"transductive"}
+MODS=${MODS:-"transductive_multi_prototype transductive_quality_weighted transductive_scale_aware"}
 SHOTS=${SHOTS:-"1 10"}
 SEEDS=${SEEDS:-"0"}
 SETTINGS=${SETTINGS:-"fsod"}  # fsod | gfsod | "fsod gfsod"
+EXTRA_OPTS=${EXTRA_OPTS:-}
 
 case "${RUN_MODE}" in
     finetune|train|base)
@@ -57,6 +58,9 @@ esac
 
 echo "[INFO] split=${SPLIT_ID} run_mode=${RUN_MODE} (${RUN_MODE_DESC})"
 echo "[INFO] mods=${MODS} settings=${SETTINGS} shots=${SHOTS} seeds=${SEEDS}"
+if [ -n "${EXTRA_OPTS}" ]; then
+    echo "[INFO] extra_opts=${EXTRA_OPTS}"
+fi
 if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
     echo "[INFO] pretrained_novel_root=${PRETRAINED_NOVEL_ROOT}"
 else
@@ -113,6 +117,11 @@ run_main_job() {
         OUTPUT_DIR "${output_dir}"
         TEST.PCB_MODELPATH "${IMAGENET_PRETRAIN_TORCH}"
     )
+    if [ -n "${EXTRA_OPTS}" ]; then
+        local extra_opts=()
+        read -r -a extra_opts <<< "${EXTRA_OPTS}"
+        main_args+=("${extra_opts[@]}")
+    fi
 
     while [ "${attempt}" -le "${TRAIN_RETRIES}" ]; do
         wait_for_gpu

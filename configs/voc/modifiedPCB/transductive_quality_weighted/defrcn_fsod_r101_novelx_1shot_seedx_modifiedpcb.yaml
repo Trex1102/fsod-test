@@ -1,0 +1,9 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+  PCB_TRANSDUCTIVE: True
+  PCB_TRANS_MIN_SCORE: 0.70
+  PCB_TRANS_MAX_PER_CLASS: 5
+  PCB_TRANS_PSEUDO_WEIGHT: 0.30
+  PCB_QUALITY_WEIGHTED: True

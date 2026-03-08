@@ -72,12 +72,29 @@ class PrototypicalCalibrationBlock:
         self.score_norm_power = float(cfg.TEST.PCB_SCORE_NORM_POWER)
         self.score_clamp_eps = float(cfg.TEST.PCB_SCORE_CLAMP_EPS)
 
-        # 8) Transductive inference
+        # 8) Prototype-based class reassignment
+        self.enable_proto_reassign = bool(cfg.TEST.PCB_PROTO_REASSIGN)
+        self.proto_reassign_min_score = float(cfg.TEST.PCB_PROTO_REASSIGN_MIN_SCORE)
+        self.proto_reassign_max_score = float(cfg.TEST.PCB_PROTO_REASSIGN_MAX_SCORE)
+        self.proto_reassign_min_sim = float(cfg.TEST.PCB_PROTO_REASSIGN_MIN_SIM)
+        self.proto_reassign_margin = float(cfg.TEST.PCB_PROTO_REASSIGN_MARGIN)
+
+        # 9) Transductive inference
         self.enable_transductive = bool(cfg.TEST.PCB_TRANSDUCTIVE)
         self.trans_min_score = float(cfg.TEST.PCB_TRANS_MIN_SCORE)
         self.trans_max_per_class = int(cfg.TEST.PCB_TRANS_MAX_PER_CLASS)
+        self.trans_min_sim = float(cfg.TEST.PCB_TRANS_MIN_SIM)
+        self.trans_score_power = float(cfg.TEST.PCB_TRANS_SCORE_POWER)
+        self.trans_sim_power = float(cfg.TEST.PCB_TRANS_SIM_POWER)
+        self.trans_pseudo_cap = float(cfg.TEST.PCB_TRANS_PSEUDO_CAP)
+        self.trans_force_weighted = bool(cfg.TEST.PCB_TRANS_FORCE_WEIGHTED)
         self.trans_pseudo_weight = float(cfg.TEST.PCB_TRANS_PSEUDO_WEIGHT)
         self.trans_online = bool(cfg.TEST.PCB_TRANS_ONLINE)
+        self.trans_gate_enabled = bool(cfg.TEST.PCB_TRANS_GATE_ENABLED)
+        self.trans_gate_min_score = float(cfg.TEST.PCB_TRANS_GATE_MIN_SCORE)
+        self.trans_gate_min_sim = float(cfg.TEST.PCB_TRANS_GATE_MIN_SIM)
+        self.trans_gate_min_count = int(cfg.TEST.PCB_TRANS_GATE_MIN_COUNT)
+        self.trans_gate_weaken = float(cfg.TEST.PCB_TRANS_GATE_WEAKEN)
 
         if self.multiproto_match not in {"max", "softmax"}:
             raise ValueError("TEST.PCB_MULTIPROTO_MATCH must be one of: max, softmax")
@@ -145,7 +162,7 @@ class PrototypicalCalibrationBlock:
             return torch.ones_like(weights) / max(int(weights.numel()), 1)
         return weights / total
 
-    def _aggregate_one_proto(self, features, qualities):
+    def _aggregate_one_proto(self, features, qualities, force_quality_weighted=False):
         feats = features
         quals = qualities
         n = int(feats.shape[0])
@@ -167,7 +184,7 @@ class PrototypicalCalibrationBlock:
                 medoid_idx = torch.argmax(torch.sum(sim_matrix, dim=1))
                 return feats[int(medoid_idx)]
 
-        if self.enable_quality_weighted:
+        if self.enable_quality_weighted or force_quality_weighted:
             weights = torch.pow(quals.clamp(min=1e-8), self.quality_power)
             weights = self._safe_weight_norm(weights).view(-1, 1)
             return torch.sum(feats * weights, dim=0)
@@ -211,7 +228,7 @@ class PrototypicalCalibrationBlock:
 
         return centers, assign
 
-    def _build_proto_bank(self, features, qualities):
+    def _build_proto_bank(self, features, qualities, force_quality_weighted=False):
         if int(features.shape[0]) == 0:
             return {
                 "protos": torch.empty((0, features.shape[1]), device=features.device),
@@ -228,18 +245,18 @@ class PrototypicalCalibrationBlock:
                     continue
                 cluster_feats = features[idx]
                 cluster_quals = qualities[idx]
-                proto = self._aggregate_one_proto(cluster_feats, cluster_quals)
+                proto = self._aggregate_one_proto(cluster_feats, cluster_quals, force_quality_weighted=force_quality_weighted)
                 protos.append(proto)
                 weights.append(float(idx.numel()))
             if len(protos) == 0:
-                proto = self._aggregate_one_proto(features, qualities)
+                proto = self._aggregate_one_proto(features, qualities, force_quality_weighted=force_quality_weighted)
                 return {"protos": proto.unsqueeze(0), "weights": torch.tensor([1.0], device=features.device)}
             proto_tensor = torch.stack(protos, dim=0)
             weight_tensor = torch.tensor(weights, dtype=proto_tensor.dtype, device=proto_tensor.device)
             weight_tensor = self._safe_weight_norm(weight_tensor)
             return {"protos": proto_tensor, "weights": weight_tensor}
 
-        proto = self._aggregate_one_proto(features, qualities)
+        proto = self._aggregate_one_proto(features, qualities, force_quality_weighted=force_quality_weighted)
         return {"protos": proto.unsqueeze(0), "weights": torch.tensor([1.0], device=features.device)}
 
     def _area_bin(self, area_norm):
@@ -418,6 +435,21 @@ class PrototypicalCalibrationBlock:
         sim = torch.sum(weights * sims)
         return float(sim.item())
 
+    def _best_proto_match(self, query_feature, area_norm):
+        best_cls = None
+        best_sim = -1.0
+        for cand_cls in self.prototypes.keys():
+            if cand_cls in self.exclude_cls:
+                continue
+            proto_bank = self._select_proto_bank(cand_cls, area_norm)
+            if proto_bank is None:
+                continue
+            sim = self._match_similarity(query_feature, proto_bank)
+            if best_cls is None or sim > best_sim:
+                best_cls = int(cand_cls)
+                best_sim = float(sim)
+        return best_cls, best_sim
+
     def _effective_alpha(self, cls, sim):
         gate = float(self.class_gate_factor.get(cls, 1.0))
         base_alpha = float(self.alpha)
@@ -437,7 +469,7 @@ class PrototypicalCalibrationBlock:
             return float(alpha)
 
         # Class gate can still weaken static-alpha PCB.
-        if self.enable_class_gate and gate < 1.0:
+        if gate < 1.0:
             return float(1.0 - (1.0 - base_alpha) * gate)
 
         return base_alpha
@@ -454,7 +486,7 @@ class PrototypicalCalibrationBlock:
         normed = 1.0 / (1.0 + math.exp(-(logit / temp)))
         return float(normed)
 
-    def execute_calibration(self, inputs, dts):
+    def execute_calibration(self, inputs, dts, allow_reassign=True):
         if len(dts) == 0 or len(dts[0]["instances"]) == 0:
             return dts
 
@@ -496,9 +528,22 @@ class PrototypicalCalibrationBlock:
                 continue
 
             sim = self._match_similarity(features[q_idx], proto_bank)
-            alpha = self._effective_alpha(cls, sim)
-
             old_score = float(scores[i].item())
+
+            if allow_reassign and self.enable_proto_reassign:
+                if self.proto_reassign_min_score <= old_score <= self.proto_reassign_max_score:
+                    best_cls, best_sim = self._best_proto_match(features[q_idx], float(area_norm[q_idx].item()))
+                    if (
+                        best_cls is not None
+                        and best_cls != cls
+                        and best_sim >= self.proto_reassign_min_sim
+                        and best_sim >= sim + self.proto_reassign_margin
+                    ):
+                        cls = int(best_cls)
+                        pred_classes[i] = cls
+                        sim = float(best_sim)
+
+            alpha = self._effective_alpha(cls, sim)
             fused = old_score * alpha + sim * (1.0 - alpha)
             fused = self._normalize_score(cls, fused)
 
@@ -510,9 +555,11 @@ class PrototypicalCalibrationBlock:
         """Collect high-confidence detections as pseudo-support samples.
 
         Extracted features are accumulated into pseudo_dict:
-            {cls: {"features": [Tensor], "scores": [float], "areas": [float]}}
+            {cls: {"features": [Tensor], "scores": [float], "areas": [float],
+                   "sims": [float], "rank_scores": [float]}}
 
-        Keeps the trans_max_per_class highest-score samples per class.
+        Keeps the trans_max_per_class best samples per class using a score/similarity
+        ranking so off-manifold pseudo boxes do not dominate 1-shot prototype rebuilds.
         """
         if len(dts) == 0 or len(dts[0]["instances"]) == 0:
             return
@@ -546,25 +593,97 @@ class PrototypicalCalibrationBlock:
             cls = int(hi_classes[i].item())
             if cls in self.exclude_cls:
                 continue
+            if cls not in self.prototypes:
+                continue
+
+            proto_bank = self._select_proto_bank(cls, float(areas[i].item()))
+            if proto_bank is None:
+                continue
+
+            sim = self._match_similarity(features[i], proto_bank)
+            if sim < self.trans_min_sim:
+                continue
 
             if cls not in pseudo_dict:
-                pseudo_dict[cls] = {"features": [], "scores": [], "areas": []}
+                pseudo_dict[cls] = {
+                    "features": [],
+                    "scores": [],
+                    "areas": [],
+                    "sims": [],
+                    "rank_scores": [],
+                }
 
             entry = pseudo_dict[cls]
             cur_score = float(hi_scores[i].item())
+            sim01 = max(0.0, min(1.0, (sim + 1.0) / 2.0))
+            rank_score = (cur_score ** self.trans_score_power) * ((max(sim01, 1e-6)) ** self.trans_sim_power)
 
             if len(entry["features"]) < self.trans_max_per_class:
                 entry["features"].append(features[i])
                 entry["scores"].append(cur_score)
                 entry["areas"].append(float(areas[i].item()))
+                entry["sims"].append(float(sim))
+                entry["rank_scores"].append(float(rank_score))
             else:
-                # Replace the lowest-score pseudo sample if this one is better.
-                min_score = min(entry["scores"])
-                if cur_score > min_score:
-                    min_idx = entry["scores"].index(min_score)
+                # Replace the lowest-ranked pseudo sample if this one is better.
+                min_rank = min(entry["rank_scores"])
+                if rank_score > min_rank:
+                    min_idx = entry["rank_scores"].index(min_rank)
                     entry["features"][min_idx] = features[i]
                     entry["scores"][min_idx] = cur_score
                     entry["areas"][min_idx] = float(areas[i].item())
+                    entry["sims"][min_idx] = float(sim)
+                    entry["rank_scores"][min_idx] = float(rank_score)
+
+    def _summarize_pseudo(self, pseudo_dict, gate_factors=None):
+        if not pseudo_dict:
+            return "none"
+        parts = []
+        for cls in sorted(pseudo_dict.keys()):
+            entry = pseudo_dict[cls]
+            count = len(entry.get("features", []))
+            if count == 0:
+                continue
+            mean_score = sum(entry.get("scores", [])) / max(len(entry.get("scores", [])), 1)
+            mean_sim = sum(entry.get("sims", [])) / max(len(entry.get("sims", [])), 1)
+            gate = 1.0 if gate_factors is None else float(gate_factors.get(cls, 1.0))
+            parts.append(
+                "cls=%d n=%d score=%.3f sim=%.3f gate=%.2f" % (
+                    cls,
+                    count,
+                    mean_score,
+                    mean_sim,
+                    gate,
+                )
+            )
+        return "; ".join(parts) if parts else "none"
+
+    def _cap_pseudo_qualities(self, real_quals, pseudo_quals):
+        if real_quals is None or pseudo_quals is None or pseudo_quals.numel() == 0:
+            return pseudo_quals
+        real_mass = float(real_quals.sum().item()) if real_quals.numel() > 0 else 0.0
+        pseudo_mass = float(pseudo_quals.sum().item()) if pseudo_quals.numel() > 0 else 0.0
+        if real_mass <= 0.0 or pseudo_mass <= 0.0:
+            return pseudo_quals
+        cap_mass = max(real_mass * self.trans_pseudo_cap, 1e-8)
+        if pseudo_mass <= cap_mass:
+            return pseudo_quals
+        return pseudo_quals * (cap_mass / pseudo_mass)
+
+    def _build_transductive_gate(self, pseudo_scores, pseudo_sims):
+        if not self.trans_gate_enabled:
+            return 1.0
+        count = len(pseudo_scores)
+        if count == 0:
+            return 1.0
+        weaken = float(max(0.0, min(1.0, self.trans_gate_weaken)))
+        if count < self.trans_gate_min_count:
+            return weaken
+        mean_score = sum(pseudo_scores) / count
+        mean_sim = sum(pseudo_sims) / count
+        if mean_score >= self.trans_gate_min_score and mean_sim >= self.trans_gate_min_sim:
+            return 1.0
+        return weaken
 
     def rebuild_with_pseudo(self, pseudo_dict):
         """Rebuild prototype bank by blending real K-shot support with pseudo-labels.
@@ -593,6 +712,7 @@ class PrototypicalCalibrationBlock:
             pseudo_info = pseudo_dict.get(cls, {})
             pseudo_feat_list = pseudo_info.get("features", [])
             pseudo_score_list = pseudo_info.get("scores", [])
+            pseudo_sim_list = pseudo_info.get("sims", [])
             pseudo_area_list = pseudo_info.get("areas", [])
 
             if not real_feat_list and not pseudo_feat_list:
@@ -605,11 +725,16 @@ class PrototypicalCalibrationBlock:
 
             if pseudo_feat_list:
                 pseudo_feats = torch.stack(pseudo_feat_list, dim=0)
-                # Scale by pseudo_weight so real support dominates in quality-weighted mean.
+                sim01 = torch.tensor(
+                    [max(0.0, min(1.0, (float(v) + 1.0) / 2.0)) for v in pseudo_sim_list],
+                    dtype=pseudo_feats.dtype,
+                )
                 pseudo_quals = (
                     torch.tensor(pseudo_score_list, dtype=pseudo_feats.dtype)
+                    * torch.pow(sim01.clamp(min=1e-6), self.trans_sim_power)
                     * self.trans_pseudo_weight
                 )
+                pseudo_quals = self._cap_pseudo_qualities(real_quals if real_feat_list else None, pseudo_quals)
                 pseudo_areas_t = torch.tensor(pseudo_area_list, dtype=pseudo_feats.dtype)
 
             if real_feat_list and pseudo_feat_list:
@@ -624,10 +749,12 @@ class PrototypicalCalibrationBlock:
             stats = self._compute_class_stats(feats, quals, areas)
             new_support_stats[cls] = stats
             new_reliability[cls] = float(stats["reliability"])
-            new_gate_factor[cls] = self._build_gate_factor(stats)
+            trans_gate = self._build_transductive_gate(pseudo_score_list, pseudo_sim_list)
+            new_gate_factor[cls] = float(max(0.0, min(1.0, self._build_gate_factor(stats) * trans_gate)))
             new_temperature[cls] = self._build_temperature(stats)
 
-            class_entry = {"global": self._build_proto_bank(feats, quals), "scale": {}}
+            force_weighted = bool(self.trans_force_weighted and pseudo_feat_list)
+            class_entry = {"global": self._build_proto_bank(feats, quals, force_quality_weighted=force_weighted), "scale": {}}
             if self.enable_scale_aware:
                 bin_ids = torch.tensor(
                     [self._area_bin(float(a.item())) for a in areas], dtype=torch.long
@@ -636,7 +763,7 @@ class PrototypicalCalibrationBlock:
                     idx = torch.nonzero(bin_ids == bid, as_tuple=False).flatten()
                     if idx.numel() == 0:
                         continue
-                    class_entry["scale"][bid] = self._build_proto_bank(feats[idx], quals[idx])
+                    class_entry["scale"][bid] = self._build_proto_bank(feats[idx], quals[idx], force_quality_weighted=force_weighted)
             new_prototypes[cls] = class_entry
 
         self.prototypes = new_prototypes
@@ -646,10 +773,11 @@ class PrototypicalCalibrationBlock:
         self.class_temperature = new_temperature
 
         logger.info(
-            "Transductive: rebuilt prototypes. real_classes=%d pseudo_classes=%d total=%d",
+            "Transductive: rebuilt prototypes. real_classes=%d pseudo_classes=%d total=%d | pseudo=%s",
             len(self._real_class_features),
             len(pseudo_dict),
             len(new_prototypes),
+            self._summarize_pseudo(pseudo_dict, new_gate_factor),
         )
 
     def clsid_filter(self):

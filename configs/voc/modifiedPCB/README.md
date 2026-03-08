@@ -11,3 +11,7 @@ Methods:
 - `robust_aggregation`: trimmed-mean robust prototype aggregation.
 - `class_conditional_gate`: weaken/skip PCB for unstable class support.
 - `score_normalization`: per-class post-calibration temperature normalization.
+- `transductive`: two-pass pseudo-support prototype rebuild.
+- `transductive_quality_weighted`: transductive pseudo-support plus quality-weighted aggregation.
+- `transductive_multi_prototype`: transductive pseudo-support plus multi-prototype matching.
+- `transductive_scale_aware`: transductive pseudo-support plus scale-aware prototype selection.
