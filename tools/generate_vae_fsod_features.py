@@ -195,9 +195,12 @@ def main():
     )
     beta_interval = float(cfg.MODEL.VAE_FSOD.BETA_INTERVAL)
 
-    base_norm_min, base_norm_max = paper_default_norm_range(int(ckpt["latent_dim"]))
-    norm_min = float(cfg.MODEL.VAE_FSOD.NORM_MIN_FACTOR) * base_norm_min
-    norm_max = float(cfg.MODEL.VAE_FSOD.NORM_MAX_FACTOR) * base_norm_max
+    # Paper default: [sqrt(d), 5*sqrt(d)] for d=latent_dim
+    # NORM_MIN_FACTOR and NORM_MAX_FACTOR scale from sqrt(d), NOT from paper defaults
+    # So factor=1.0 means sqrt(d), factor=5.0 means 5*sqrt(d) (paper default max)
+    sqrt_d = float(int(ckpt["latent_dim"])) ** 0.5
+    norm_min = float(cfg.MODEL.VAE_FSOD.NORM_MIN_FACTOR) * sqrt_d
+    norm_max = float(cfg.MODEL.VAE_FSOD.NORM_MAX_FACTOR) * sqrt_d
     iou_min = float(cfg.MODEL.VAE_FSOD.IOU_MIN)
     iou_max = float(cfg.MODEL.VAE_FSOD.IOU_MAX)
 
