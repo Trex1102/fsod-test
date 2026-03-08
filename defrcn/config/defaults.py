@@ -269,6 +269,8 @@ _CC.NOVEL_METHODS.CLIP_GROUND.CLIP_MODEL = "ViT-B/32"  # CLIP model variant
 _CC.NOVEL_METHODS.CLIP_GROUND.VISUAL_WEIGHT = 0.7   # Weight for visual similarity
 _CC.NOVEL_METHODS.CLIP_GROUND.TEXT_WEIGHT = 0.3     # Weight for text similarity
 _CC.NOVEL_METHODS.CLIP_GROUND.USE_DESCRIPTIONS = True  # Use class descriptions
+_CC.NOVEL_METHODS.CLIP_GROUND.USE_CLIP_VISUAL = True   # Use CLIP visual encoder on RoI patches (training-free)
+_CC.NOVEL_METHODS.CLIP_GROUND.USE_PROMPT_ENSEMBLE = True  # Use multiple prompt templates
 
 # ----- 7) SAM-Masked Prototype Purification ----- #
 # Uses Segment Anything Model to mask out background pixels in RoI
