@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Run Novel Methods for Few-Shot Object Detection on VOC
-# Usage: bash run_novel_methods.sh <split_id> [method] [shots] [seeds]
+# Usage: bash run_novel_methods.sh <split_id> [method] [shots] [seeds] [run_mode]
 #
 # Examples:
-#   bash run_novel_methods.sh 1                           # Run all methods, all shots, seed 0
-#   bash run_novel_methods.sh 1 freq_aug                  # Run only frequency augmentation
-#   bash run_novel_methods.sh 1 all "1 2 3 5 10" "0 1 2"  # Custom shots and seeds
+#   bash run_novel_methods.sh 1
+#   bash run_novel_methods.sh 1 freq_aug
+#   bash run_novel_methods.sh 1 all "2 3 5 10" "0 1 2"
+#   bash run_novel_methods.sh 1 freq_aug "1 5" "0" infer_pretrained_novel
 
 set -e
 
@@ -13,20 +14,27 @@ SPLIT_ID=$1
 METHOD=${2:-"all"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip
 SHOTS=${3:-"1 2 3 5 10"}
 SEEDS=${4:-"0"}
+RUN_MODE=${5:-"infer_pretrained_novel"}  # finetune, infer_pretrained_novel
 
-if [ -z "${SPLIT_ID}" ]; then
-    echo "Usage: bash run_novel_methods.sh <split_id> [method] [shots] [seeds]"
+show_usage() {
+    echo "Usage: bash run_novel_methods.sh <split_id> [method] [shots] [seeds] [run_mode]"
     echo ""
     echo "Arguments:"
     echo "  split_id  : VOC split (1, 2, or 3)"
     echo "  method    : Method to run (all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip)"
-    echo "  shots     : Shot settings (default: \"1 2 3 5 10\")"
+    echo "  shots     : Shot settings (default: \"2 3 5 10\")"
     echo "  seeds     : Random seeds (default: \"0\")"
+    echo "  run_mode  : finetune or infer_pretrained_novel (default: \"finetune\")"
     echo ""
     echo "Examples:"
     echo "  bash run_novel_methods.sh 1"
     echo "  bash run_novel_methods.sh 1 freq_aug"
-    echo "  bash run_novel_methods.sh 1 all \"1 2 3 5 10\" \"0 1 2 3 4\""
+    echo "  bash run_novel_methods.sh 1 all \"2 3 5 10\" \"0 1 2 3 4\""
+    echo "  bash run_novel_methods.sh 1 freq_aug \"1 5\" \"0\" infer_pretrained_novel"
+}
+
+if [ -z "${SPLIT_ID}" ]; then
+    show_usage
     exit 1
 fi
 
@@ -36,14 +44,34 @@ SAVE_DIR=checkpoints/voc/${EXP_NAME}
 IMAGENET_PRETRAIN_TORCH=${IMAGENET_PRETRAIN_TORCH:-.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth}
 
 # Base model weights (from vanilla DeFRCN base training)
-BASE_WEIGHT_DIR=${BASE_WEIGHT_DIR:-checkpoints/voc/defrcn/defrcn_det_r101_base${SPLIT_ID}}
+BASE_WEIGHT_DIR=${BASE_WEIGHT_DIR:-checkpoints/voc/vanilla_defrcn/defrcn_det_r101_base${SPLIT_ID}}
 BASE_WEIGHT=${BASE_WEIGHT_DIR}/model_reset_remove.pth
 
-if [ ! -f "${BASE_WEIGHT}" ]; then
-    echo "Warning: Base weight not found at ${BASE_WEIGHT}"
-    echo "Please set BASE_WEIGHT_DIR to your trained base model directory."
-    echo "Continuing anyway (will fail if weight is actually needed)..."
-fi
+# Pretrained vanilla DeFRCN novel checkpoints
+PRETRAINED_NOVEL_ROOT=${PRETRAINED_NOVEL_ROOT:-checkpoints/voc/vanilla_defrcn}
+
+case "${RUN_MODE}" in
+    finetune|train|base)
+        RUN_MODE="finetune"
+        RUN_MODE_DESC="fine-tune from base weights"
+        RUN_MODE_DIR="novelMethods"
+        if [ ! -f "${BASE_WEIGHT}" ]; then
+            echo "Warning: Base weight not found at ${BASE_WEIGHT}"
+            echo "Please set BASE_WEIGHT_DIR to your trained base model directory."
+            echo "Continuing anyway (will fail if weight is actually needed)..."
+        fi
+        ;;
+    infer_pretrained_novel|pretrained_novel|eval_pretrained_novel)
+        RUN_MODE="infer_pretrained_novel"
+        RUN_MODE_DESC="eval-only from pretrained vanilla novel checkpoints"
+        RUN_MODE_DIR="novelMethodsPretrainedNovelEval"
+        ;;
+    *)
+        echo "Unknown run_mode: ${RUN_MODE}"
+        echo "Available run modes: finetune, infer_pretrained_novel"
+        exit 1
+        ;;
+esac
 
 # Method configurations
 declare -A METHOD_NAMES
@@ -64,7 +92,7 @@ METHOD_SUFFIXES["clip"]="clip"
 
 # Determine which methods to run
 if [ "${METHOD}" = "all" ]; then
-    METHODS="freq_aug contrastive self_distill uncertainty part_graph clip"
+    METHODS="contrastive self_distill uncertainty part_graph clip" # Freq aug is excluded because we already have results from it
 else
     METHODS="${METHOD}"
 fi
@@ -75,8 +103,13 @@ echo "=============================================="
 echo "Methods: ${METHODS}"
 echo "Shots: ${SHOTS}"
 echo "Seeds: ${SEEDS}"
-echo "Save dir: ${SAVE_DIR}"
-echo "Base weight: ${BASE_WEIGHT}"
+echo "Run mode: ${RUN_MODE} (${RUN_MODE_DESC})"
+echo "Save dir: ${SAVE_DIR}/${RUN_MODE_DIR}"
+if [ "${RUN_MODE}" = "finetune" ]; then
+    echo "Base weight: ${BASE_WEIGHT}"
+else
+    echo "Pretrained novel root: ${PRETRAINED_NOVEL_ROOT}"
+fi
 echo "=============================================="
 
 for method in ${METHODS}; do
@@ -92,7 +125,7 @@ for method in ${METHODS}; do
     echo ""
     echo ">>> Running method: ${method} (${METHOD_DIR})"
     
-    METHOD_SAVE_DIR=${SAVE_DIR}/novelMethods/${METHOD_DIR}/split${SPLIT_ID}
+    METHOD_SAVE_DIR=${SAVE_DIR}/${RUN_MODE_DIR}/${METHOD_DIR}/split${SPLIT_ID}
     mkdir -p ${METHOD_SAVE_DIR}
     
     for shot in ${SHOTS}; do
@@ -116,11 +149,36 @@ for method in ${METHODS}; do
             
             OUTPUT_DIR=${METHOD_SAVE_DIR}/${shot}shot_seed${seed}
             
-            # Run evaluation with novel method
-            python3 main.py --num-gpus 1 --config-file ${CONFIG_PATH} \
-                --opts MODEL.WEIGHTS ${BASE_WEIGHT} \
-                       OUTPUT_DIR ${OUTPUT_DIR} \
-                       TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+            if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
+                MODEL_WEIGHT=${PRETRAINED_NOVEL_ROOT}/split${SPLIT_ID}/${shot}shot_seed${seed}/model_final.pth
+                if [ ! -f "${MODEL_WEIGHT}" ]; then
+                    echo "Error: Pretrained novel weight not found at ${MODEL_WEIGHT}"
+                    echo "Please verify split/shot/seed or set PRETRAINED_NOVEL_ROOT."
+                    exit 1
+                fi
+                MAIN_ARGS=(
+                    --num-gpus 1
+                    --eval-only
+                    --config-file ${CONFIG_PATH}
+                    --opts
+                    MODEL.WEIGHTS ${MODEL_WEIGHT}
+                    OUTPUT_DIR ${OUTPUT_DIR}
+                    TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+                )
+            else
+                MODEL_WEIGHT=${BASE_WEIGHT}
+                MAIN_ARGS=(
+                    --num-gpus 1
+                    --config-file ${CONFIG_PATH}
+                    --opts
+                    MODEL.WEIGHTS ${MODEL_WEIGHT}
+                    OUTPUT_DIR ${OUTPUT_DIR}
+                    TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+                )
+            fi
+            
+            # Run fine-tuning or eval-only inference with novel method
+            python3 main.py "${MAIN_ARGS[@]}"
             
             # Cleanup temporary configs
             rm -f ${CONFIG_PATH}
@@ -128,7 +186,7 @@ for method in ${METHODS}; do
             rm -f ${BASE_CONFIG_PATH}
             
             # Remove model checkpoint to save space (keep only results)
-            rm -f ${OUTPUT_DIR}/model_final.pth
+            # rm -f ${OUTPUT_DIR}/model_final.pth
             
             echo "  Completed: ${shot}-shot, seed ${seed}"
         done
@@ -143,5 +201,5 @@ done
 echo ""
 echo "=============================================="
 echo "All methods completed!"
-echo "Results saved in: ${SAVE_DIR}/novelMethods/"
+echo "Results saved in: ${SAVE_DIR}/${RUN_MODE_DIR}/"
 echo "=============================================="
