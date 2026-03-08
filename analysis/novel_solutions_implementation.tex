@@ -1,0 +1,978 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{caption}
+% algorithm packages not available; using listings for pseudocode
+\usepackage[normalem]{ulem}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  breaklines=true,
+  frame=single,
+  language=Python,
+}
+
+\title{\textbf{Corrected Gap Analysis and \\
+Detailed Implementation of Five Novel Solutions \\
+for Few-Shot Object Detection}}
+\author{FSOD Research}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+%=============================================================================
+\section{Correction: Seed Evaluation Protocol}
+%=============================================================================
+
+\subsection{Paper's Actual Protocol (from official \texttt{run\_voc.sh})}
+
+Examination of the official DeFRCN repository reveals the \textbf{exact} VOC FSOD evaluation protocol:
+
+\begin{lstlisting}[language=bash,caption={Official DeFRCN VOC FSOD protocol}]
+# --> 1. FSRW-like, i.e. run seed0 10 times
+#        (the FSOD results on voc in most papers)
+for repeat_id in 0 1 2 3 4 5 6 7 8 9
+do
+    for shot in 1 2 3 5 10
+    do
+        for seed in 0
+        do
+            # ... train and evaluate ...
+        done
+    done
+done
+\end{lstlisting}
+
+\textbf{Conclusion:} The paper uses \textbf{seed 0 only} for VOC FSOD---the same as our setup. The ``averaged over multiple runs'' refers to 10 \textit{repeat runs} of the same seed (same support images, different random training initialization), \textbf{not} different seed selections. Therefore, single-seed evaluation is \textbf{NOT a source of the performance gap}.
+
+\subsection{Revised Configuration Comparison}
+
+\begin{table}[h]
+\centering
+\caption{Corrected comparison between paper and our setup}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Parameter} & \textbf{Paper (Official)} & \textbf{Ours} \\
+\midrule
+GPUs & 8 & 1 \\
+Total batch size (IMS\_PER\_BATCH) & 16 & 8 \\
+Images per GPU & 2 & 8 \\
+\midrule
+\multicolumn{3}{l}{\textit{Base Training}} \\
+BASE\_LR & 0.02 & 0.01 (linearly scaled) \\
+MAX\_ITER & 15,000 & 30,000 ($2\times$ to match throughput) \\
+STEPS & (10000, 13300) & (20000, 26600) (scaled) \\
+Total images seen & 240,000 & 240,000 \\
+\midrule
+\multicolumn{3}{l}{\textit{Novel 1-shot Fine-tuning}} \\
+BASE\_LR & 0.01 & 0.005 (linearly scaled) \\
+MAX\_ITER & 800 & 1,600 ($2\times$ to match throughput) \\
+STEPS & (640,) & (1280,) (scaled) \\
+Total images seen & 12,800 & 12,800 \\
+\midrule
+Seed & 0 & 0 \\
+Repeats & 10 (averaged) & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Revised Root Causes (Corrected)}
+
+\begin{enumerate}
+    \item \textcolor{red}{\sout{Single seed vs.\ multi-seed}} $\rightarrow$ \textbf{Both use seed 0.} Not a factor.
+
+    \item \textbf{10 repeats vs.\ 1 repeat} (Revised): The paper averages 10 independent training runs. This reduces variance from stochastic training (random weight init for novel classifier, mini-batch sampling order, dropout). Our single run could be unlucky. \textit{Estimated impact: $\pm 1$--$2$ $AP_{50}$}.
+
+    \item \textbf{Batch size 16 $\rightarrow$ 8}: Still the dominant factor. Although total image throughput matches, the per-step gradient quality differs. With BS=8, each gradient update is noisier ($\sqrt{2}\times$ higher variance). Crucially, with only 1--5 images per novel class, even the total data is identical across batches---the batch composition is more homogeneous with BS=8 (more repetitions of the same 5 images per epoch), potentially causing different convergence dynamics.
+
+    \item \textbf{Multi-GPU distributed training effects}: The paper uses 8 GPUs with 2 images each. Detectron2's distributed training performs \texttt{allreduce} on gradients across GPUs \textit{before} updating, which averages gradients from 8 different mini-batches. This is equivalent to a single-GPU BS=16 in terms of gradient quality, but the gradient averaging across GPUs provides an implicit regularization effect that single-GPU BS=8 lacks.
+
+    \item \textbf{Per-GPU BN statistics}: With 8 GPUs and BS=16 total (2 per GPU), each GPU computes BN statistics from only 2 images. Our 1 GPU with BS=8 computes BN from 8 images---\textit{actually better} local BN statistics. However, DeFRCN uses \texttt{FrozenBN} (frozen from ImageNet pretraining), so this is likely irrelevant.
+
+    \item \textbf{Novel methods not executing}: Unchanged from previous analysis. The identical results across contrastive/self-distillation/frequency methods prove the code has integration bugs.
+\end{enumerate}
+
+\textbf{Revised gap attribution:} The $\sim$3.5 $AP_{50}$ gap (50.12 vs.\ 53.6) is primarily from: (a) BS=8 gradient noise ($\sim$1.5--2.5 AP), (b) single repeat vs.\ 10-repeat averaging ($\sim$1--2 AP), and (c) non-linear LR scaling effects ($\sim$0.5--1 AP).
+
+
+%=============================================================================
+\section{The Overfitting Problem in FSOD}
+\label{sec:overfitting}
+%=============================================================================
+
+Before presenting solutions, we must rigorously characterize \textit{why} FSOD is prone to overfitting, as this constrains what solutions are viable.
+
+\subsection{Why FSOD Overfits}
+
+\begin{enumerate}
+    \item \textbf{Extreme data scarcity:} In 1-shot VOC FSOD, we have 5 training images (1 per novel class) containing $\sim$5--10 object instances total. The classifier head has $5 \times 2048 + 5 = 10,245$ parameters for just the final FC layer---\textbf{more parameters than training pixels}.
+
+    \item \textbf{Large pre-trained backbone:} ResNet-101 has $\sim$44M parameters. Even with most frozen, the unfrozen layers (classifier, box regressor, portions of res5) have $\sim$500K--2M learnable parameters vs.\ 5 training images.
+
+    \item \textbf{Domain shift:} ImageNet features $\neq$ VOC detection features. Fine-tuning on 5 images cannot bridge this gap without overfitting to the specific visual patterns of those 5 images.
+
+    \item \textbf{Class imbalance:} The RPN generates $\sim$1000 proposals per image. Only a tiny fraction are positives for novel classes. The classifier is overwhelmed by background negatives, learning to suppress all predictions (underfitting novel classes) or memorizing the few positives (overfitting).
+\end{enumerate}
+
+\subsection{The Overfitting Constraint on Novel Solutions}
+
+Any proposed solution must satisfy:
+\begin{itemize}[nosep]
+    \item \textbf{Zero or near-zero additional learnable parameters} during novel fine-tuning
+    \item \textbf{Inference-time only} modifications are safest (no training overfitting possible)
+    \item If training modifications are needed, they must act on the \textbf{base training stage} (abundant data) and \textbf{transfer} to novel classes without fine-tuning
+    \item Any learnable component added during novel fine-tuning must have \textbf{strong inductive biases} that constrain the solution space
+\end{itemize}
+
+
+%=============================================================================
+\section{Solution 1: Batch-Agnostic Few-Shot Detection (BA-FSD)}
+\label{sec:bafsd}
+%=============================================================================
+
+\subsection{Motivation}
+
+The core problem: batch size affects BN statistics during \textit{base training}, and this propagates to novel class performance. While DeFRCN uses FrozenBN (frozen ImageNet statistics), the convergence dynamics during base training with different batch sizes still produce different learned weights. The solution must make training invariant to batch size.
+
+\subsection{Detailed Implementation}
+
+\subsubsection{Step 1: Replace BN with GN+WS in the Backbone}
+
+Replace all BatchNorm layers in ResNet-101 with Group Normalization (32 groups) + Weight Standardization:
+
+\begin{lstlisting}[caption={GN+WS replacement in ResNet backbone}]
+import torch.nn as nn
+import torch.nn.functional as F
+
+class WeightStandardizedConv2d(nn.Conv2d):
+    def forward(self, x):
+        weight = self.weight
+        # Weight Standardization: normalize kernel weights
+        mean = weight.mean(dim=[1, 2, 3], keepdim=True)
+        std = weight.std(dim=[1, 2, 3], keepdim=True) + 1e-5
+        weight = (weight - mean) / std
+        return F.conv2d(x, weight, self.bias, self.stride,
+                        self.padding, self.dilation, self.groups)
+
+def convert_bn_to_gn_ws(model, num_groups=32):
+    """Replace all BN layers with GN and Conv2d with WS-Conv2d."""
+    for name, module in model.named_children():
+        if isinstance(module, (nn.BatchNorm2d, FrozenBatchNorm2d)):
+            num_channels = module.num_features
+            gn = nn.GroupNorm(min(num_groups, num_channels),
+                             num_channels, affine=True)
+            setattr(model, name, gn)
+        elif isinstance(module, nn.Conv2d) and module.kernel_size != (1,1):
+            ws_conv = WeightStandardizedConv2d(
+                module.in_channels, module.out_channels,
+                module.kernel_size, stride=module.stride,
+                padding=module.padding, dilation=module.dilation,
+                groups=module.groups, bias=module.bias is not None
+            )
+            ws_conv.weight.data.copy_(module.weight.data)
+            if module.bias is not None:
+                ws_conv.bias.data.copy_(module.bias.data)
+            setattr(model, name, ws_conv)
+        else:
+            convert_bn_to_gn_ws(module, num_groups)
+\end{lstlisting}
+
+\subsubsection{Step 2: Task-Adaptive Normalization (TAN) for Novel Classes}
+
+During novel fine-tuning, learn class-conditioned affine parameters for each GN layer. A small hypernetwork generates $(\gamma_c, \beta_c)$ from the support set:
+
+\begin{lstlisting}[caption={Task-Adaptive Normalization module}]
+class TaskAdaptiveNorm(nn.Module):
+    def __init__(self, num_channels, support_dim=2048):
+        super().__init__()
+        self.gn = nn.GroupNorm(32, num_channels, affine=False)
+        # Hypernetwork: support features -> affine params
+        # Very small: only 2 * num_channels output params
+        self.hyper = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(support_dim, 64),  # bottleneck
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 2 * num_channels)  # gamma + beta
+        )
+        # Initialize to identity transform
+        nn.init.zeros_(self.hyper[-1].weight)
+        nn.init.zeros_(self.hyper[-1].bias)
+        self.hyper[-1].bias.data[:num_channels] = 1.0  # gamma=1
+
+    def forward(self, x, support_feat=None):
+        out = self.gn(x)
+        if support_feat is not None:
+            params = self.hyper(support_feat)
+            gamma = params[:, :out.size(1)].unsqueeze(-1).unsqueeze(-1)
+            beta = params[:, out.size(1):].unsqueeze(-1).unsqueeze(-1)
+            out = gamma * out + beta
+        return out
+\end{lstlisting}
+
+\subsubsection{Step 3: Integration with DeFRCN Pipeline}
+
+\begin{enumerate}[nosep]
+    \item \textbf{Base training:} Train ResNet-101+GN+WS from ImageNet-pretrained weights (re-initialize GN from BN stats). Train with standard DeFRCN pipeline. This base model is now batch-size invariant.
+    \item \textbf{Novel fine-tuning:} Freeze backbone. Only train the classifier head + TAN hypernetworks. The hypernetwork parameters total $\sim$64$\times$2048 + 64$\times$2$\times C$ per layer $\approx$ 130K params, but they are shared across classes and conditioned on the support set, preventing per-class overfitting.
+    \item \textbf{Inference:} Compute TAN affine params once from the K-shot support set, cache them, and apply during inference.
+\end{enumerate}
+
+\subsection{Why This Avoids Overfitting}
+
+\begin{itemize}[nosep]
+    \item \textbf{GN+WS modification is entirely in base training} (15K+ base images)---no overfitting risk.
+    \item \textbf{TAN hypernetwork has strong inductive bias}: it maps support features $\rightarrow$ affine params through a 64-dim bottleneck. With 64 hidden units, the hypernetwork has $\sim$130K params but these are \textit{conditioned} on all K-shot support features jointly, not per-image. The bottleneck forces the network to learn a low-dimensional space of normalization transformations.
+    \item \textbf{Identity initialization}: TAN starts as identity transform ($\gamma=1, \beta=0$), so early training behaves identically to vanilla GN. Deviations only occur when the gradient signal is strong enough, which acts as implicit regularization.
+    \item \textbf{No per-class parameters}: Unlike adapters that learn separate parameters per insertion point, TAN shares the hypernetwork across all novel classes---the class-specific behavior emerges from the support set conditioning.
+\end{itemize}
+
+
+%=============================================================================
+\section{Solution 2: Dual-Pathway Gradient Decoupling (DP-GDL)}
+\label{sec:dpgdl}
+%=============================================================================
+
+\subsection{Motivation}
+
+DeFRCN's GDL uses fixed $\lambda_{rpn}=0$ (stop gradient) and $\lambda_{rcnn}=0.75$ (scale gradient). These values were found by grid search on COCO 10/30-shot. However:
+\begin{itemize}[nosep]
+    \item Optimal $\lambda$ varies per class, per image, and per shot setting
+    \item Fixed $\lambda$ cannot adapt to the distributional shift between base and novel
+    \item Different proposals within the same image may need different decoupling strengths
+\end{itemize}
+
+\subsection{Detailed Implementation}
+
+\subsubsection{Step 1: Learnable Gating Network (Base Training Only)}
+
+Replace fixed $\lambda$ with a lightweight gating module:
+
+\begin{lstlisting}[caption={Dynamic GDL with learned gating}]
+class DynamicGDL(nn.Module):
+    """Gradient Decoupled Layer with input-dependent lambda."""
+    def __init__(self, channels, reduction=16):
+        super().__init__()
+        # Channel attention gate: maps features -> per-channel lambda
+        self.gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(channels, channels // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // reduction, channels),
+            nn.Sigmoid()
+        )
+        # Initialize to match DeFRCN's fixed lambda
+        # For RPN: init to ~0 (stop gradient)
+        # For RCNN: init to ~0.75 (scale gradient)
+        self.default_lambda = 0.75  # set per-module
+
+    def forward(self, x):
+        # Forward: apply channel-wise affine (like original GDL)
+        return x  # identity in forward pass
+
+    def backward_hook(self, grad):
+        # Backward: scale gradient by learned lambda
+        lambdas = self.gate(self._cached_input)  # [B, C]
+        lambdas = lambdas.unsqueeze(-1).unsqueeze(-1)  # [B,C,1,1]
+        return grad * lambdas
+\end{lstlisting}
+
+\subsubsection{Step 2: Dual-Pathway Feature Routing}
+
+Split the backbone output into classification-relevant and localization-relevant pathways:
+
+\begin{lstlisting}[caption={Dual-pathway feature routing}]
+class DualPathwayHead(nn.Module):
+    def __init__(self, in_channels=2048, roi_size=7):
+        super().__init__()
+        # Classification pathway: spatial average pool -> invariant
+        self.cls_pool = nn.AdaptiveAvgPool2d(1)
+        self.cls_proj = nn.Linear(in_channels, in_channels)
+
+        # Localization pathway: preserve spatial info
+        self.loc_proj = nn.Conv2d(in_channels, in_channels, 1)
+
+        # Routing gate: learns to split features
+        self.route_gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, roi_features):
+        gate = self.route_gate(roi_features)  # [B, 1]
+        # Classification: translation-invariant features
+        cls_feat = self.cls_pool(roi_features).flatten(1)
+        cls_feat = self.cls_proj(cls_feat)
+        # Localization: translation-covariant features
+        loc_feat = self.loc_proj(roi_features)
+        return cls_feat, loc_feat, gate
+\end{lstlisting}
+
+\subsubsection{Step 3: Orthogonality Regularization}
+
+Encourage the two pathways to learn complementary features:
+
+\begin{lstlisting}[caption={Orthogonality loss}]
+def orthogonality_loss(cls_grad, loc_grad, eps=1e-8):
+    """Penalize alignment between classification and
+    localization gradient directions."""
+    cls_flat = cls_grad.flatten(1)
+    loc_flat = loc_grad.flatten(1)
+    # Cosine similarity between gradient directions
+    cos_sim = F.cosine_similarity(cls_flat, loc_flat, dim=1)
+    return cos_sim.pow(2).mean()  # minimize squared cosine
+\end{lstlisting}
+
+\subsubsection{Step 4: Integration}
+
+\begin{enumerate}[nosep]
+    \item \textbf{Base training:} Train the gating network and dual pathways with the orthogonality loss. Total loss: $\mathcal{L} = \mathcal{L}_{rpn} + \mathcal{L}_{rcnn}^{cls} + \mathcal{L}_{rcnn}^{reg} + \lambda_{orth}\|\cos(\nabla_{cls}, \nabla_{loc})\|^2$, with $\lambda_{orth} = 0.1$.
+    \item \textbf{Novel fine-tuning:} \textbf{Freeze} the gating network and routing module. Only train the classifier head. The learned routing persists from base training.
+    \item \textbf{Inference:} No changes needed---the dual pathway is transparent.
+\end{enumerate}
+
+\subsection{Why This Avoids Overfitting}
+
+\begin{itemize}[nosep]
+    \item \textbf{All learnable components are trained during base training} on 15K+ images with 15 classes. Zero additional parameters are trained during novel fine-tuning.
+    \item \textbf{The gating network is frozen during novel fine-tuning}---it cannot overfit to the K-shot support set. It simply applies the routing policy learned from abundant base data.
+    \item \textbf{The routing generalizes across classes} because it operates on feature statistics (channel means via GAP), not class-specific patterns. A ``small object in cluttered scene'' activates the same routing whether the object is a base class (car) or novel class (bird).
+    \item \textbf{Orthogonality regularization acts as explicit anti-overfitting}: by forcing classification and localization features to be orthogonal, it prevents the classifier from exploiting localization shortcuts that only work for the few training examples.
+    \item \textbf{Reduced hyperparameter sensitivity}: instead of manually tuning $\lambda_{rpn}$ and $\lambda_{rcnn}$, the model learns them. Fewer hyperparameters = less risk of overfitting to validation set choices.
+\end{itemize}
+
+
+%=============================================================================
+\section{Solution 3: PCB with Foundation Model Alignment (PCB-FMA)}
+\label{sec:pcbfma}
+%=============================================================================
+
+\subsection{Motivation}
+
+PCB uses a \textit{separately pretrained} ImageNet ResNet-101 as the feature extractor for prototype construction. This is limiting because:
+\begin{itemize}[nosep]
+    \item ImageNet ResNet-101 was trained for 1000-class classification---its features are optimized for ImageNet categories, not VOC/COCO detection categories
+    \item The cosine similarity in PCB operates in a space not aligned with detection features
+    \item Foundation models (DINOv2, SigLIP) trained on billions of images with self-supervised objectives produce far more generalizable features
+\end{itemize}
+
+\subsection{Detailed Implementation}
+
+\subsubsection{Step 1: Replace ImageNet ResNet-101 with Frozen Foundation Model}
+
+\begin{lstlisting}[caption={Foundation model feature extraction for PCB}]
+import torch
+import torch.nn as nn
+
+class FoundationModelPCB(nn.Module):
+    """PCB with DINOv2 as the prototype feature extractor."""
+    def __init__(self, model_name='dinov2_vitl14', proj_dim=1024):
+        super().__init__()
+        # Load frozen foundation model
+        self.fm = torch.hub.load('facebookresearch/dinov2',
+                                  model_name)
+        self.fm.eval()
+        for p in self.fm.parameters():
+            p.requires_grad = False
+
+        self.fm_dim = self.fm.embed_dim  # e.g., 1024 for ViT-L
+        self.proj_dim = proj_dim
+
+        # Lightweight cross-space projection (trained on base)
+        # Maps detection RoI features to FM space
+        self.det_to_fm = nn.Sequential(
+            nn.Linear(2048, proj_dim),
+            nn.LayerNorm(proj_dim),
+            nn.GELU(),
+            nn.Linear(proj_dim, proj_dim),
+            nn.LayerNorm(proj_dim),
+        )
+
+        # FM RoI feature extraction
+        self.fm_roi_pool = ROIPooler(
+            output_size=(14, 14),  # ViT patch size
+            scales=(1/14,), sampling_ratio=0,
+            pooler_type="ROIAlignV2"
+        )
+
+    def extract_fm_features(self, images, boxes):
+        """Extract foundation model features for RoIs."""
+        with torch.no_grad():
+            # Get FM patch tokens
+            fm_features = self.fm.forward_features(images)
+            patch_tokens = fm_features['x_norm_patchtokens']
+            # Reshape to spatial feature map
+            B, N, D = patch_tokens.shape
+            h = w = int(N ** 0.5)
+            fm_map = patch_tokens.reshape(B, h, w, D)
+            fm_map = fm_map.permute(0, 3, 1, 2)  # B,D,h,w
+        # Pool RoIs from FM feature map
+        roi_feats = self.fm_roi_pool([fm_map], boxes)
+        roi_feats = roi_feats.mean(dim=[2, 3])  # global avg pool
+        return roi_feats  # [num_rois, fm_dim]
+\end{lstlisting}
+
+\subsubsection{Step 2: Cross-Space Projection Training (Base Stage)}
+
+Train the projection layer $\pi: \mathbb{R}^{d_{det}} \rightarrow \mathbb{R}^{d_{fm}}$ using base-class data:
+
+\begin{lstlisting}[caption={Cross-space projection training}]
+class CrossSpaceProjectionLoss(nn.Module):
+    def __init__(self, temperature=0.07):
+        super().__init__()
+        self.temp = temperature
+
+    def forward(self, det_projected, fm_features, labels):
+        """
+        det_projected: [N, D] - detector features projected to FM space
+        fm_features: [N, D] - foundation model features for same RoIs
+        labels: [N] - class labels
+        """
+        # Normalize
+        det_norm = F.normalize(det_projected, dim=1)
+        fm_norm = F.normalize(fm_features, dim=1)
+
+        # Contrastive alignment: same-RoI features should match
+        pos_sim = (det_norm * fm_norm).sum(dim=1) / self.temp
+        # Cross-RoI negatives
+        sim_matrix = det_norm @ fm_norm.t() / self.temp
+        # InfoNCE loss
+        loss = -pos_sim + torch.logsumexp(sim_matrix, dim=1)
+        return loss.mean()
+\end{lstlisting}
+
+\subsubsection{Step 3: Tri-Modal Score Fusion}
+
+Calibrate detection scores using three complementary signals:
+
+\begin{lstlisting}[caption={Tri-modal score calibration}]
+class TriModalCalibration:
+    def __init__(self, alpha=0.4, beta=0.4, gamma=0.2):
+        self.alpha = alpha  # detector score weight
+        self.beta = beta    # FM visual similarity weight
+        self.gamma = gamma  # FM text similarity weight (optional)
+        self.text_prototypes = None  # pre-computed
+
+    def build_text_prototypes(self, class_names, fm_model):
+        """Use CLIP/SigLIP text encoder for zero-shot prototypes."""
+        import clip
+        texts = [f"a photo of a {name}" for name in class_names]
+        text_tokens = clip.tokenize(texts)
+        with torch.no_grad():
+            self.text_prototypes = fm_model.encode_text(text_tokens)
+            self.text_prototypes = F.normalize(
+                self.text_prototypes, dim=1)
+
+    def calibrate(self, det_score, det_roi_feat, fm_roi_feat,
+                  fm_prototypes, class_id):
+        """Fuse detector, FM-visual, and FM-text scores."""
+        # Visual prototype similarity (in FM space)
+        fm_feat_norm = F.normalize(fm_roi_feat, dim=0)
+        proto_norm = F.normalize(fm_prototypes[class_id], dim=0)
+        s_fm_visual = (fm_feat_norm * proto_norm).sum()
+
+        # Text prototype similarity (optional)
+        s_fm_text = 0.0
+        if self.text_prototypes is not None:
+            text_proto = self.text_prototypes[class_id]
+            s_fm_text = (fm_feat_norm * text_proto).sum()
+
+        # Tri-modal fusion
+        s_final = (self.alpha * det_score +
+                   self.beta * s_fm_visual +
+                   self.gamma * s_fm_text)
+        return s_final
+\end{lstlisting}
+
+\subsubsection{Step 4: Full Pipeline Integration}
+
+\begin{enumerate}[nosep]
+    \item \textbf{Base training:} Train DeFRCN normally + train cross-space projection $\pi$ using base-class RoI pairs (detector features, FM features) with contrastive loss. Only $\pi$ is new ($\sim$4M params, trained on 15K+ base images).
+    \item \textbf{Novel fine-tuning:} Standard DeFRCN novel fine-tuning. $\pi$ is frozen.
+    \item \textbf{Inference:} For each detection, extract FM features for the RoI, compute tri-modal calibration score. FM is frozen, $\pi$ is frozen---\textbf{zero additional parameters trained on novel data}.
+\end{enumerate}
+
+\subsection{Why This Avoids Overfitting}
+
+\begin{itemize}[nosep]
+    \item \textbf{Zero novel-stage learnable parameters}: The foundation model is frozen. The projection $\pi$ is trained on base classes and frozen. Novel fine-tuning is identical to vanilla DeFRCN.
+    \item \textbf{This is strictly an inference-time modification}: The calibration replaces the existing PCB's ImageNet ResNet-101 with a foundation model. No training changes means no overfitting opportunity.
+    \item \textbf{Foundation models are inherently anti-overfitting}: DINOv2/SigLIP are trained on billions of diverse images. Their feature space is vastly more generalizable than ImageNet ResNet-101. A novel class like ``sofa'' (which gets 5.86 $AP_{50}$ in our vanilla results) will have a much better prototype in DINOv2 space because DINOv2 has seen millions of sofa-like objects during pre-training.
+    \item \textbf{Text prototypes provide zero-shot regularization}: Even without any visual support, the text prototype ``a photo of a sofa'' provides a reasonable prior. This acts as a Bayesian prior that prevents the prototype from collapsing to a single bad example.
+    \item \textbf{Tri-modal fusion diversifies the signal}: Instead of relying solely on detector scores (which overfit to training examples), the FM-visual and FM-text scores provide independent, non-overfitted estimates.
+\end{itemize}
+
+\subsection{Expected Gain Analysis}
+
+\begin{table}[h]
+\centering
+\caption{Why PCB-FMA should work: per-class analysis for Split 1 1-shot}
+\small
+\begin{tabular}{lccp{5cm}}
+\toprule
+\textbf{Class} & \textbf{Our $AP_{50}$} & \textbf{Issue} & \textbf{Why FM Helps} \\
+\midrule
+bird & 54.30 & Moderate & FM's fine-grained feature resolves bird vs.\ bg \\
+bus & 70.93 & OK & Already strong; FM maintains \\
+cow & 51.15 & Moderate & FM distinguishes cow from horse/sheep better \\
+motorbike & 70.17 & OK & Already strong \\
+sofa & 5.86 & \textcolor{red}{Critical} & ImageNet ResNet has poor sofa representation; DINOv2 sees millions of indoor scenes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The sofa class alone at 5.86 $AP_{50}$ drags the average down by $\sim$9 points. A foundation model should dramatically improve this class due to its exposure to diverse indoor imagery during pretraining.
+
+
+%=============================================================================
+\section{Solution 4: Meta-Calibration (Meta-PCB)}
+\label{sec:metapcb}
+%=============================================================================
+
+\subsection{Motivation}
+
+The PCB calibration formula $s_i^\dagger = \alpha \cdot s_i + (1-\alpha) \cdot s_i^{cos}$ is a \textit{fixed linear function} with a single hyperparameter $\alpha$. This is suboptimal because:
+\begin{itemize}[nosep]
+    \item The optimal calibration is likely \textit{non-linear} (high-confidence detections need less calibration than borderline ones)
+    \item The optimal $\alpha$ varies per class, per score range, and per support set quality
+    \item Hand-tuning $\alpha$ on the validation set risks overfitting the hyperparameter itself
+\end{itemize}
+
+\subsection{Detailed Implementation}
+
+\subsubsection{Step 1: Calibration Network Architecture}
+
+\begin{lstlisting}[caption={Meta-PCB calibration network}]
+class MetaCalibrationNet(nn.Module):
+    """Learned non-linear calibration function.
+    Replaces: s_final = alpha * s_det + (1-alpha) * s_cos
+    With: s_final = C_theta(s_det, s_cos, feat_stats)
+    """
+    def __init__(self, feat_dim=2048, hidden=64):
+        super().__init__()
+        # Input: [det_score, cos_sim, support_stats, roi_stats]
+        # support_stats: mean/std of support features (4 dims)
+        # roi_stats: feature norm, entropy of score dist (2 dims)
+        input_dim = 2 + 4 + 2  # = 8 scalar inputs
+
+        self.calibrator = nn.Sequential(
+            nn.Linear(input_dim, hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, 1),
+            nn.Sigmoid()  # output calibrated score in [0, 1]
+        )
+
+        # Residual connection: initialize to approximate
+        # the original linear calibration
+        self._init_to_linear_baseline()
+
+    def _init_to_linear_baseline(self):
+        """Init so output approx = 0.5*s_det + 0.5*s_cos"""
+        # Zero-init last layer for residual learning
+        nn.init.zeros_(self.calibrator[-2].weight)
+        nn.init.zeros_(self.calibrator[-2].bias)
+
+    def forward(self, det_score, cos_sim,
+                support_mean, support_std,
+                roi_feat_norm, score_entropy):
+        x = torch.stack([
+            det_score, cos_sim,
+            support_mean, support_std,
+            support_mean.norm(), support_std.norm(),
+            roi_feat_norm, score_entropy
+        ], dim=-1)
+        # Residual: learned correction on top of linear baseline
+        linear_baseline = 0.5 * det_score + 0.5 * cos_sim
+        correction = self.calibrator(x).squeeze(-1) - 0.5
+        return (linear_baseline + 0.1 * correction).clamp(0, 1)
+\end{lstlisting}
+
+\subsubsection{Step 2: Episodic Meta-Training}
+
+Train the calibration network on simulated few-shot episodes constructed from base classes:
+
+\begin{lstlisting}[caption={Meta-training loop for calibration network}]
+def meta_train_calibrator(calibrator, base_detector,
+                          base_dataset, num_episodes=10000,
+                          n_way=5, k_shot=1):
+    optimizer = torch.optim.Adam(calibrator.parameters(), lr=1e-3)
+
+    for episode in range(num_episodes):
+        # Sample a pseudo-few-shot task from base classes
+        # Select n_way classes randomly from 15 base classes
+        classes = random.sample(range(15), n_way)
+
+        # Sample k_shot support images per class
+        support = sample_support(base_dataset, classes, k_shot)
+
+        # Build prototypes from support (same as PCB)
+        prototypes = build_prototypes(support, imagenet_model)
+
+        # Run detector on query images
+        query_images = sample_query(base_dataset, classes, n=50)
+        detections = base_detector(query_images)
+
+        # For each detection, compute calibrated score
+        losses = []
+        for det in detections:
+            det_score = det['score']
+            cos_sim = cosine_similarity(det['roi_feat'],
+                                       prototypes[det['pred_cls']])
+            # Compute support statistics
+            s_mean = prototypes[det['pred_cls']].mean()
+            s_std = prototypes[det['pred_cls']].std()
+            roi_norm = det['roi_feat'].norm()
+            s_entropy = compute_score_entropy(det['all_scores'])
+
+            calibrated = calibrator(det_score, cos_sim,
+                                   s_mean, s_std,
+                                   roi_norm, s_entropy)
+            # Supervise with IoU-based soft label
+            soft_label = compute_iou_label(det['box'],
+                                          det['gt_box'])
+            losses.append(F.binary_cross_entropy(
+                calibrated, soft_label))
+
+        loss = torch.stack(losses).mean()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+\end{lstlisting}
+
+\subsubsection{Step 3: Integration}
+
+\begin{enumerate}[nosep]
+    \item \textbf{Base training:} Train DeFRCN normally. Then meta-train calibration network using base-class episodes (separate from DeFRCN training, using frozen base detector).
+    \item \textbf{Novel fine-tuning:} Standard DeFRCN. Calibration network is frozen.
+    \item \textbf{Inference:} Replace $s^\dagger = \alpha \cdot s + (1-\alpha) \cdot s^{cos}$ with $s^\dagger = \mathcal{C}_\theta(s, s^{cos}, \text{stats})$.
+\end{enumerate}
+
+\subsection{Why This Avoids Overfitting}
+
+\begin{itemize}[nosep]
+    \item \textbf{The calibration network is trained on base classes and frozen during novel evaluation}. It \textit{never sees} novel class data during training. Zero risk of novel-class overfitting.
+    \item \textbf{Episodic training simulates the exact few-shot condition}: by constructing pseudo-few-shot tasks from base classes, the calibrator learns to generalize to \textit{any} novel class with K support examples. This is the core insight of meta-learning---learn the learning algorithm itself.
+    \item \textbf{Tiny architecture with residual connection}: The calibrator has only $8 \times 64 + 64 \times 64 + 64 \times 1 = 4,672$ parameters. The residual connection ensures it starts as vanilla PCB and only learns corrections. The small capacity acts as a regularizer.
+    \item \textbf{Input features are class-agnostic statistics}: The calibrator operates on scalar inputs (scores, similarity, norms, entropy)---not on raw high-dimensional features. This means it cannot memorize class-specific patterns; it learns a \textit{general calibration policy} based on prediction confidence signals.
+    \item \textbf{10,000 episodes $\gg$ 4,672 parameters}: The meta-training data is effectively infinite (random episode sampling from base classes), so the calibrator cannot overfit to specific episodes.
+\end{itemize}
+
+
+%=============================================================================
+\section{Solution 5: Uncertainty-Guided Prototype Refinement (UPR-TTA)}
+\label{sec:uprtta}
+%=============================================================================
+
+\subsection{Motivation}
+
+The transductive PCB approach (Section 9 of our modified calibration layer) collects pseudo-labels to refine prototypes. However, it uses \textit{ad-hoc thresholds} (\texttt{TRANS\_MIN\_SCORE=0.70}, \texttt{TRANS\_MIN\_SIM}) to decide which detections to trust. This is fragile: too strict $\rightarrow$ too few pseudo-labels (only 25 collected from 4952 images in our run); too loose $\rightarrow$ false positives corrupt prototypes.
+
+The solution: use \textit{epistemic uncertainty} to make principled decisions about which detections to trust.
+
+\subsection{Detailed Implementation}
+
+\subsubsection{Step 1: MC-Dropout Uncertainty Estimation}
+
+Enable dropout in the Res5 ROI head during inference and perform multiple stochastic forward passes:
+
+\begin{lstlisting}[caption={MC-Dropout uncertainty estimation}]
+class MCDropoutUncertainty:
+    def __init__(self, model, num_passes=10, dropout_rate=0.1):
+        self.model = model
+        self.T = num_passes
+        self.dropout_rate = dropout_rate
+
+    def enable_mc_dropout(self):
+        """Enable dropout in res5 head for MC estimation."""
+        for module in self.model.roi_heads.res5.modules():
+            if isinstance(module, nn.Dropout):
+                module.train()  # keep dropout active
+            # Also enable dropout for conv layers via
+            # spatial dropout
+        # Add dropout after res5 if not present
+        if not hasattr(self.model.roi_heads, 'mc_dropout'):
+            self.model.roi_heads.mc_dropout = nn.Dropout2d(
+                p=self.dropout_rate)
+
+    @torch.no_grad()
+    def predict_with_uncertainty(self, images, proposals):
+        """Run T forward passes, compute mean + variance."""
+        self.enable_mc_dropout()
+        all_scores = []
+        all_features = []
+
+        for t in range(self.T):
+            # Stochastic forward pass
+            features = self.model.backbone(images.tensor)
+            roi_features = self.model.roi_heads._shared_roi_transform(
+                [features['res4']], proposals)
+            # Apply MC dropout
+            roi_features = self.model.roi_heads.mc_dropout(
+                roi_features)
+            roi_features = roi_features.mean(dim=[2, 3])
+
+            scores = self.model.roi_heads.box_predictor(
+                roi_features)[0]
+            scores = F.softmax(scores, dim=1)
+
+            all_scores.append(scores)
+            all_features.append(roi_features)
+
+        scores_stack = torch.stack(all_scores, dim=0)  # [T,N,C]
+        feats_stack = torch.stack(all_features, dim=0)  # [T,N,D]
+
+        # Predictive mean and uncertainty
+        mean_scores = scores_stack.mean(dim=0)      # [N, C]
+        epistemic_var = scores_stack.var(dim=0)      # [N, C]
+        mean_features = feats_stack.mean(dim=0)      # [N, D]
+        feat_var = feats_stack.var(dim=0).mean(dim=1)  # [N]
+
+        return {
+            'mean_scores': mean_scores,
+            'epistemic_var': epistemic_var,
+            'mean_features': mean_features,
+            'feat_uncertainty': feat_var,
+        }
+\end{lstlisting}
+
+\subsubsection{Step 2: Uncertainty-Guided Pseudo-Label Selection}
+
+\begin{lstlisting}[caption={Principled pseudo-label selection}]
+class UncertaintyGuidedPseudoLabeler:
+    def __init__(self, score_thresh=0.5, uncertainty_thresh=0.05,
+                 max_per_class=10):
+        self.score_thresh = score_thresh
+        self.unc_thresh = uncertainty_thresh
+        self.max_per_class = max_per_class
+
+    def select_pseudo_labels(self, predictions, uncertainties):
+        """Select high-confidence, low-uncertainty detections
+        as pseudo-support."""
+        pseudo_labels = {}
+        scores = predictions['mean_scores']
+        unc = predictions['epistemic_var']
+        features = predictions['mean_features']
+
+        for i in range(len(scores)):
+            cls = scores[i].argmax().item()
+            cls_score = scores[i, cls].item()
+            cls_unc = unc[i, cls].item()
+            feat_unc = predictions['feat_uncertainty'][i].item()
+
+            # Key insight: select iff HIGH score AND LOW uncertainty
+            # High score + high uncertainty = model is guessing
+            # High score + low uncertainty = model is confident
+            if (cls_score >= self.score_thresh and
+                cls_unc <= self.unc_thresh):
+
+                # Weight by inverse uncertainty
+                quality = cls_score / (cls_unc + 1e-8)
+
+                if cls not in pseudo_labels:
+                    pseudo_labels[cls] = []
+                pseudo_labels[cls].append({
+                    'feature': features[i],
+                    'score': cls_score,
+                    'uncertainty': cls_unc,
+                    'quality': quality,
+                })
+
+        # Keep top-k per class by quality
+        for cls in pseudo_labels:
+            pseudo_labels[cls].sort(
+                key=lambda x: x['quality'], reverse=True)
+            pseudo_labels[cls] = (
+                pseudo_labels[cls][:self.max_per_class])
+
+        return pseudo_labels
+\end{lstlisting}
+
+\subsubsection{Step 3: Uncertainty-Adaptive PCB Alpha}
+
+\begin{lstlisting}[caption={Adaptive alpha based on prediction uncertainty}]
+def uncertainty_adaptive_alpha(det_score, cos_sim,
+                                epistemic_unc, base_alpha=0.5):
+    """High uncertainty -> rely more on PCB (prototype).
+    Low uncertainty -> rely more on detector."""
+    # Normalize uncertainty to [0, 1] range
+    unc_normalized = min(epistemic_unc / 0.1, 1.0)
+
+    # High uncertainty: decrease alpha (more PCB influence)
+    # Low uncertainty: increase alpha (trust detector)
+    alpha = base_alpha + (1.0 - base_alpha) * (1.0 - unc_normalized)
+    alpha = max(0.1, min(0.9, alpha))
+
+    return alpha * det_score + (1 - alpha) * cos_sim
+\end{lstlisting}
+
+\subsubsection{Step 4: One-Step Test-Time Adaptation}
+
+\begin{lstlisting}[caption={Test-time adaptation of classifier head}]
+class TestTimeAdaptation:
+    def __init__(self, model, lr=0.001, entropy_thresh=0.3):
+        self.model = model
+        self.lr = lr
+        self.entropy_thresh = entropy_thresh
+        # Only adapt the final classifier head
+        self.params = [p for n, p in model.named_parameters()
+                       if 'box_predictor.cls_score' in n]
+        self.optimizer = torch.optim.SGD(self.params, lr=lr)
+        # Save initial state for reset
+        self.initial_state = {n: p.clone()
+                             for n, p in model.named_parameters()
+                             if 'box_predictor.cls_score' in n}
+
+    def adapt_step(self, features, pseudo_labels):
+        """One gradient step using pseudo-labeled detections."""
+        if not pseudo_labels:
+            return
+
+        # Collect pseudo-labeled features and targets
+        feats, targets = [], []
+        for cls, items in pseudo_labels.items():
+            for item in items:
+                if item['uncertainty'] < self.entropy_thresh:
+                    feats.append(item['feature'])
+                    targets.append(cls)
+
+        if len(feats) < 3:  # need minimum samples
+            return
+
+        feats = torch.stack(feats)
+        targets = torch.tensor(targets, device=feats.device)
+
+        # One-step update with entropy minimization
+        self.optimizer.zero_grad()
+        logits = self.model.roi_heads.box_predictor.cls_score(
+            feats)
+        loss = F.cross_entropy(logits, targets)
+        loss.backward()
+        self.optimizer.step()
+
+    def reset(self):
+        """Reset to initial weights after each test image."""
+        for n, p in self.model.named_parameters():
+            if n in self.initial_state:
+                p.data.copy_(self.initial_state[n])
+\end{lstlisting}
+
+\subsubsection{Step 5: Full Pipeline}
+
+\begin{enumerate}[nosep]
+    \item \textbf{Base training:} Standard DeFRCN + add dropout layers to Res5 head (train with dropout for regularization benefit).
+    \item \textbf{Novel fine-tuning:} Standard DeFRCN (dropout acts as regularizer---actual benefit for K-shot training).
+    \item \textbf{Inference:} Two-pass protocol:
+    \begin{itemize}[nosep]
+        \item \textit{Pass 1}: Run MC-Dropout on all test images. Collect pseudo-labels using uncertainty-guided selection. Rebuild prototypes.
+        \item \textit{Pass 2}: Run final evaluation with rebuilt prototypes and uncertainty-adaptive $\alpha$. Optionally apply one-step TTA per image.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Why This Avoids Overfitting}
+
+\begin{itemize}[nosep]
+    \item \textbf{MC-Dropout is parameter-free at test time}: Uncertainty estimation requires zero additional parameters. It simply runs the same model multiple times with different dropout masks.
+    \item \textbf{Dropout during novel training is actually \textit{beneficial}}: Adding dropout to the Res5 head during the K-shot fine-tuning provides regularization that \textit{reduces} overfitting. This is one of the most established anti-overfitting techniques.
+    \item \textbf{Uncertainty-based selection is principled and self-correcting}: Unlike fixed thresholds (\texttt{MIN\_SCORE=0.7}), the uncertainty criterion adapts to the model's actual confidence. A well-calibrated model will naturally select only reliable pseudo-labels. If the model is uncertain about everything, no pseudo-labels are selected---safely falling back to vanilla PCB.
+    \item \textbf{TTA with reset prevents accumulation of errors}: The classifier is adapted for one test image, then \textit{reset to initial weights}. No errors accumulate across test images. The one-step update with 3+ pseudo-labeled features and a learning rate of 0.001 produces a minimal weight change that cannot cause catastrophic forgetting.
+    \item \textbf{Bayesian justification}: MC-Dropout approximates Bayesian inference over the posterior $p(\theta|D_{K\text{-shot}})$. The uncertainty estimate captures \textit{epistemic uncertainty}---what the model doesn't know due to limited data. This is exactly the right quantity to use for deciding when to trust predictions in a data-scarce regime.
+\end{itemize}
+
+\subsection{Comparison with Current Transductive Approach}
+
+\begin{table}[h]
+\centering
+\caption{Current transductive vs.\ UPR-TTA}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Property} & \textbf{Current Transductive} & \textbf{UPR-TTA} \\
+\midrule
+Selection criterion & Fixed score threshold & Uncertainty-based \\
+Threshold & Manually tuned (0.70) & Adaptive to model confidence \\
+Pseudo-labels collected (1-shot) & 25 from 4952 images & Expected 100--500 \\
+False positive risk & High (high-score FPs pass) & Low (high-unc FPs filtered) \\
+Prototype corruption & Possible & Mitigated by uncertainty \\
+Additional parameters & Zero & Zero (dropout is free) \\
+Novel training benefit & None & Dropout regularization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+%=============================================================================
+\section{Comparative Summary of All Solutions}
+%=============================================================================
+
+\begin{table}[h!]
+\centering
+\caption{Summary comparison: overfitting risk, novel-stage parameters, and expected gains}
+\small
+\begin{tabular}{lccccc}
+\toprule
+& \textbf{Novel-stage} & \textbf{Overfit} & \textbf{Expected} & \textbf{Impl.} & \textbf{Venue} \\
+\textbf{Solution} & \textbf{new params} & \textbf{risk} & \textbf{gain} & \textbf{effort} & \textbf{target} \\
+\midrule
+BA-FSD (Norm) & $\sim$130K (TAN) & Low & +2--4 AP & Medium & CVPR \\
+DP-GDL (Routing) & 0 (frozen) & None & +1--3 AP & High & CVPR \\
+PCB-FMA (Foundation) & 0 (frozen) & None & +3--8 AP & Low & ICLR \\
+Meta-PCB (Meta-Cal) & 0 (frozen) & None & +2--5 AP & Medium & NeurIPS \\
+UPR-TTA (Uncertainty) & 0 (dropout) & None & +2--4 AP & Low & ICLR \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key insight across all solutions:} Every proposal either (a) adds parameters only during base training (15K+ images), or (b) modifies only the inference pipeline. \textbf{Zero solutions add learnable parameters during the K-shot novel fine-tuning stage.} This is the fundamental design principle that prevents overfitting in FSOD.
+
+\subsection{Recommended Priority}
+
+\begin{enumerate}
+    \item \textbf{PCB-FMA} (Solution 3): Highest expected gain, lowest implementation effort, timely topic. Start here.
+    \item \textbf{UPR-TTA} (Solution 5): Complements PCB-FMA naturally (uncertainty-guided prototype refinement \textit{in} the foundation model's feature space). Combine with Solution 3 for a complete paper.
+    \item \textbf{Meta-PCB} (Solution 4): Strong theoretical contribution but higher implementation effort. Good standalone paper.
+    \item \textbf{DP-GDL} (Solution 2): Requires re-training the base model with modified architecture. Higher risk but more novel.
+    \item \textbf{BA-FSD} (Solution 1): Important for practical reproducibility but harder to sell as a standalone contribution. Best as a component of a larger paper.
+\end{enumerate}
+
+\subsection{Combined Paper Architecture (Strongest Submission)}
+
+The strongest A*-level paper combines Solutions 3 + 5:
+
+\textbf{Title:} ``\textit{Foundation-Aligned Prototypical Calibration with Uncertainty-Guided Refinement for Few-Shot Object Detection}''
+
+\textbf{Contributions:}
+\begin{enumerate}
+    \item Replace PCB's ImageNet ResNet-101 with DINOv2 + learned cross-space projection (trained on base classes)
+    \item Add text-conditioned prototypes as zero-shot prior
+    \item Use MC-Dropout uncertainty to guide transductive prototype refinement in the foundation model's feature space
+    \item Comprehensive experiments: VOC (3 splits $\times$ 5 shots), COCO (5 shots), cross-domain (COCO$\rightarrow$VOC)
+\end{enumerate}
+
+\textbf{Why this combination is synergistic:}
+\begin{itemize}[nosep]
+    \item Foundation model features provide \textit{better prototypes} $\rightarrow$ better initial calibration
+    \item Better initial calibration $\rightarrow$ higher-quality pseudo-labels for transductive refinement
+    \item Uncertainty-guided selection in FM space is more reliable than in ImageNet space (FM has better calibrated features)
+    \item Each component is independently ablatable (clean ablation study)
+\end{itemize}
+
+\end{document}

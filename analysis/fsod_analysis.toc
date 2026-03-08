@@ -1,0 +1,26 @@
+\contentsline {section}{\numberline {1}Experimental Setup Summary}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Paper's Original Configuration}{3}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Our Configuration}{3}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Hardware Deployed}{3}{subsection.1.3}%
+\contentsline {section}{\numberline {2}Comprehensive Results Comparison}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}DeFRCN Paper Reported Results (VOC Split 1, FSOD, $AP_{50}$)}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Our Results: All Modifications ($nAP_{50}$, VOC Split 1)}{3}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Critical Observation: Identical Novel Method Results}{3}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Root Cause Analysis: Seven Reasons for Failure}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Reason 1: Batch Size Reduction (16 $\rightarrow $ 8) --- The Dominant Factor}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Reason 2: Single Run vs. 10-Repeat Averaging (CORRECTED)}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Reason 3: Novel Methods Not Actually Executing}{6}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Reason 4: PCB Modifications Operate in a Narrow Band}{6}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Reason 5: Adapter Modules Overfit in Few-Shot Regime}{6}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Reason 6: Base Model Quality Ceiling}{7}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7}Reason 7: Hyperparameter Transfer Assumption}{7}{subsection.3.7}%
+\contentsline {section}{\numberline {4}Summary of Gap Attribution}{7}{section.4}%
+\contentsline {section}{\numberline {5}Proposed Novel Solutions for A*-Level Publication}{7}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Solution 1: Batch-Agnostic Few-Shot Detection via Normalization Reparameterization (BA-FSD)}{7}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Solution 2: Dual-Pathway Gradient Decoupling with Learnable Task Routing (DP-GDL)}{8}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Solution 3: Prototypical Calibration with Foundation Model Alignment (PCB-FMA)}{9}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Solution 4: Meta-Calibration: Learning to Calibrate Across Episodes (Meta-PCB)}{9}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Solution 5: Uncertainty-Guided Prototype Refinement with Test-Time Adaptation (UPR-TTA)}{10}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Recommended Immediate Actions}{10}{section.6}%
+\contentsline {section}{\numberline {7}Publication Strategy}{11}{section.7}%
+\contentsline {section}{\numberline {8}Conclusion}{11}{section.8}%

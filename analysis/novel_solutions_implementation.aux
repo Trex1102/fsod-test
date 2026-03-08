@@ -1,0 +1,81 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Correction: Seed Evaluation Protocol}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Paper's Actual Protocol (from official \texttt  {run\_voc.sh})}{1}{subsection.1.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Official DeFRCN VOC FSOD protocol}}{1}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Revised Configuration Comparison}{1}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Revised Root Causes (Corrected)}{1}{subsection.1.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Corrected comparison between paper and our setup}}{2}{table.caption.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}The Overfitting Problem in FSOD}{2}{section.2}\protected@file@percent }
+\newlabel{sec:overfitting}{{2}{2}{The Overfitting Problem in FSOD}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Why FSOD Overfits}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}The Overfitting Constraint on Novel Solutions}{3}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Solution 1: Batch-Agnostic Few-Shot Detection (BA-FSD)}{3}{section.3}\protected@file@percent }
+\newlabel{sec:bafsd}{{3}{3}{Solution 1: Batch-Agnostic Few-Shot Detection (BA-FSD)}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Motivation}{3}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Detailed Implementation}{3}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Step 1: Replace BN with GN+WS in the Backbone}{3}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}{\ignorespaces GN+WS replacement in ResNet backbone}}{3}{lstlisting.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Step 2: Task-Adaptive Normalization (TAN) for Novel Classes}{4}{subsubsection.3.2.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}{\ignorespaces Task-Adaptive Normalization module}}{4}{lstlisting.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3}Step 3: Integration with DeFRCN Pipeline}{5}{subsubsection.3.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Why This Avoids Overfitting}{5}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Solution 2: Dual-Pathway Gradient Decoupling (DP-GDL)}{5}{section.4}\protected@file@percent }
+\newlabel{sec:dpgdl}{{4}{5}{Solution 2: Dual-Pathway Gradient Decoupling (DP-GDL)}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Motivation}{5}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Detailed Implementation}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Step 1: Learnable Gating Network (Base Training Only)}{5}{subsubsection.4.2.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}{\ignorespaces Dynamic GDL with learned gating}}{5}{lstlisting.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Step 2: Dual-Pathway Feature Routing}{6}{subsubsection.4.2.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {5}{\ignorespaces Dual-pathway feature routing}}{6}{lstlisting.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Step 3: Orthogonality Regularization}{6}{subsubsection.4.2.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {6}{\ignorespaces Orthogonality loss}}{6}{lstlisting.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.4}Step 4: Integration}{7}{subsubsection.4.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Why This Avoids Overfitting}{7}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Solution 3: PCB with Foundation Model Alignment (PCB-FMA)}{7}{section.5}\protected@file@percent }
+\newlabel{sec:pcbfma}{{5}{7}{Solution 3: PCB with Foundation Model Alignment (PCB-FMA)}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Motivation}{7}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Detailed Implementation}{7}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Step 1: Replace ImageNet ResNet-101 with Frozen Foundation Model}{7}{subsubsection.5.2.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {7}{\ignorespaces Foundation model feature extraction for PCB}}{7}{lstlisting.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Step 2: Cross-Space Projection Training (Base Stage)}{8}{subsubsection.5.2.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {8}{\ignorespaces Cross-space projection training}}{8}{lstlisting.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Step 3: Tri-Modal Score Fusion}{9}{subsubsection.5.2.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {9}{\ignorespaces Tri-modal score calibration}}{9}{lstlisting.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Step 4: Full Pipeline Integration}{10}{subsubsection.5.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Why This Avoids Overfitting}{10}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Expected Gain Analysis}{10}{subsection.5.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Why PCB-FMA should work: per-class analysis for Split 1 1-shot}}{10}{table.caption.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Solution 4: Meta-Calibration (Meta-PCB)}{11}{section.6}\protected@file@percent }
+\newlabel{sec:metapcb}{{6}{11}{Solution 4: Meta-Calibration (Meta-PCB)}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Motivation}{11}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Detailed Implementation}{11}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.1}Step 1: Calibration Network Architecture}{11}{subsubsection.6.2.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {10}{\ignorespaces Meta-PCB calibration network}}{11}{lstlisting.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.2}Step 2: Episodic Meta-Training}{12}{subsubsection.6.2.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {11}{\ignorespaces Meta-training loop for calibration network}}{12}{lstlisting.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.3}Step 3: Integration}{13}{subsubsection.6.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Why This Avoids Overfitting}{13}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Solution 5: Uncertainty-Guided Prototype Refinement (UPR-TTA)}{13}{section.7}\protected@file@percent }
+\newlabel{sec:uprtta}{{7}{13}{Solution 5: Uncertainty-Guided Prototype Refinement (UPR-TTA)}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Motivation}{13}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Detailed Implementation}{13}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.1}Step 1: MC-Dropout Uncertainty Estimation}{13}{subsubsection.7.2.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {12}{\ignorespaces MC-Dropout uncertainty estimation}}{13}{lstlisting.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.2}Step 2: Uncertainty-Guided Pseudo-Label Selection}{14}{subsubsection.7.2.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {13}{\ignorespaces Principled pseudo-label selection}}{14}{lstlisting.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.3}Step 3: Uncertainty-Adaptive PCB Alpha}{15}{subsubsection.7.2.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {14}{\ignorespaces Adaptive alpha based on prediction uncertainty}}{15}{lstlisting.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.4}Step 4: One-Step Test-Time Adaptation}{16}{subsubsection.7.2.4}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {15}{\ignorespaces Test-time adaptation of classifier head}}{16}{lstlisting.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.5}Step 5: Full Pipeline}{17}{subsubsection.7.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Why This Avoids Overfitting}{17}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Comparison with Current Transductive Approach}{17}{subsection.7.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Current transductive vs.\ UPR-TTA}}{17}{table.caption.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Comparative Summary of All Solutions}{17}{section.8}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Summary comparison: overfitting risk, novel-stage parameters, and expected gains}}{18}{table.caption.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Recommended Priority}{18}{subsection.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Combined Paper Architecture (Strongest Submission)}{18}{subsection.8.2}\protected@file@percent }
+\gdef \@abspage@last{18}

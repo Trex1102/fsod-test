@@ -369,8 +369,11 @@ class FrequencyAugmentedPCB:
             new_prototypes[cls] = class_entry
         
         # Replace base PCB prototypes
-        self.base_pcb.prototypes = new_prototypes
-    
+        if new_prototypes:
+            self.base_pcb.prototypes = new_prototypes
+            logger.info(f"FrequencyAugmentedPCB: Successfully replaced prototypes for {len(new_prototypes)} classes")
+        else:
+            logger.warning("FrequencyAugmentedPCB: No prototypes were augmented! Using original prototypes.")
     def execute_calibration(self, inputs, dts):
         """
         Delegate to base PCB's execute_calibration.
