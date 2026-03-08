@@ -458,23 +458,88 @@ class UncertaintyWeightedPCB:
     
     def execute_calibration(self, inputs, dts):
         """
-        Execute calibration with uncertainty-weighted matching.
+        Execute calibration with uncertainty-weighted alpha adjustment.
         
-        Modifies the base PCB's matching behavior to account for
-        prototype uncertainty.
+        This is the ACTUAL fix: we modify alpha per-detection based on
+        the uncertainty of the prototype match.
         """
-        # For now, use base PCB's calibration
-        # Full implementation would override _match_similarity to use uncertainty
+        # Early exits
+        if len(dts) == 0 or len(dts[0]["instances"]) == 0:
+            return dts
         
-        # Track statistics
-        if len(dts) > 0 and len(dts[0]["instances"]) > 0:
-            scores = dts[0]["instances"].scores
-            # Count predictions in calibration range
-            in_range = ((scores > self.base_pcb.pcb_lower) & 
-                       (scores <= self.base_pcb.pcb_upper)).sum()
-            self.total_matches += int(in_range.item())
+        import cv2
+        img = cv2.imread(inputs[0]["file_name"])
+        if img is None:
+            return dts
+        img_h, img_w = img.shape[0], img.shape[1]
         
-        return self.base_pcb.execute_calibration(inputs, dts)
+        scores = dts[0]["instances"].scores
+        ileft = int((scores > self.base_pcb.pcb_upper).sum().item())
+        iright = int((scores > self.base_pcb.pcb_lower).sum().item())
+        if ileft >= iright:
+            return dts
+        
+        pred_boxes = dts[0]["instances"].pred_boxes[ileft:iright]
+        if len(pred_boxes) == 0:
+            return dts
+        
+        boxes = [pred_boxes.to(self.base_pcb.device)]
+        features = self.base_pcb.extract_roi_features(img, boxes)
+        
+        pred_classes = dts[0]["instances"].pred_classes
+        score_device = scores.device
+        score_dtype = scores.dtype
+        
+        box_tensor = pred_boxes.tensor
+        area_norm = self.base_pcb._normalized_area(box_tensor, img_h, img_w)
+        
+        for i in range(ileft, iright):
+            cls = int(pred_classes[i].item())
+            if cls in self.base_pcb.exclude_cls:
+                continue
+            if cls not in self.base_pcb.prototypes:
+                continue
+            
+            q_idx = i - ileft
+            proto_bank = self.base_pcb._select_proto_bank(cls, float(area_norm[q_idx].item()))
+            if proto_bank is None:
+                continue
+            
+            # Get the query feature and prototype for uncertainty estimation
+            query_feat = features[q_idx]
+            protos = proto_bank.get("protos", None)
+            
+            if protos is not None and protos.numel() > 0:
+                # Compute uncertainty-weighted similarity
+                try:
+                    sim, uncertainty, adaptive_alpha = self.matcher.match_with_uncertainty(
+                        query_feat, protos
+                    )
+                    self.total_matches += 1
+                    
+                    if adaptive_alpha is not None:
+                        # Use adaptive alpha based on uncertainty
+                        alpha = adaptive_alpha
+                        self.high_uncertainty_count += 1
+                    else:
+                        # Use base PCB's effective alpha
+                        alpha = self.base_pcb._effective_alpha(cls, sim)
+                except Exception as e:
+                    # Fallback to base behavior
+                    sim = self.base_pcb._match_similarity(query_feat, proto_bank)
+                    alpha = self.base_pcb._effective_alpha(cls, sim)
+            else:
+                # No valid prototypes, use base behavior
+                sim = self.base_pcb._match_similarity(query_feat, proto_bank)
+                alpha = self.base_pcb._effective_alpha(cls, sim)
+            
+            old_score = float(scores[i].item())
+            fused = old_score * alpha + sim * (1.0 - alpha)
+            fused = self.base_pcb._normalize_score(cls, fused)
+            
+            scores[i] = torch.tensor(fused, device=score_device, dtype=score_dtype)
+        
+        return dts
     
     def get_statistics(self) -> Dict[str, float]:
         """Get uncertainty matching statistics."""

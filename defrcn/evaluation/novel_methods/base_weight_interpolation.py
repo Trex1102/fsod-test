@@ -389,6 +389,9 @@ class BaseWeightInterpolatedPCB(nn.Module):
         self._interpolated_prototypes: Dict[str, torch.Tensor] = {}
         self._prototype_computed = False
         
+        # Apply prototype blending immediately after construction
+        self._apply_prototype_blending()
+        
         logger.info(
             f"Initialized BaseWeightInterpolatedPCB: top_k={top_k}, "
             f"temperature={temperature}, blend_weight={blend_weight}"
@@ -414,6 +417,107 @@ class BaseWeightInterpolatedPCB(nn.Module):
             # COCO or other - return empty for now
             logger.warning("COCO class split not yet implemented, using empty lists")
             return [], []
+    
+    def _apply_prototype_blending(self):
+        """
+        Apply prototype blending to base_pcb.prototypes for novel classes.
+        
+        This is the KEY fix: actually modify the prototypes in base_pcb
+        so that execute_calibration uses blended prototypes.
+        """
+        if self._prototype_computed or not self.novel_classes:
+            return
+        
+        if not CLIP_AVAILABLE:
+            logger.warning("CLIP not available, cannot compute semantic similarity")
+            return
+        
+        # Get base prototypes from base_pcb
+        base_protos = self.base_pcb.prototypes
+        if not base_protos:
+            logger.warning("No base prototypes available")
+            return
+        
+        # Collect base class prototype vectors
+        # Base classes have IDs 0 to len(base_classes)-1
+        # Novel classes have IDs len(base_classes) to len(base_classes)+len(novel_classes)-1
+        num_base = len(self.base_classes)
+        num_novel = len(self.novel_classes)
+        
+        base_proto_vectors = []
+        available_base_classes = []
+        for i in range(num_base):
+            if i in base_protos:
+                # Get the global prototype (first proto if multiple)
+                proto_bank = base_protos[i].get("global", {})
+                protos = proto_bank.get("protos", None)
+                if protos is not None and protos.numel() > 0:
+                    # Use mean of multi-protos
+                    base_proto_vectors.append(protos.mean(dim=0))
+                    if i < len(self.base_classes):
+                        available_base_classes.append(self.base_classes[i])
+        
+        if not base_proto_vectors:
+            logger.warning("No valid base prototypes found for interpolation")
+            return
+        
+        base_proto_tensor = torch.stack(base_proto_vectors)  # (num_base, 2048)
+        device = base_proto_tensor.device
+        
+        logger.info(f"Applying base-weight interpolation to {num_novel} novel classes")
+        logger.info(f"Using {len(available_base_classes)} base classes: {available_base_classes}")
+        
+        # For each novel class, compute interpolated prototype and blend
+        for j, novel_class in enumerate(self.novel_classes):
+            novel_cls_id = num_base + j  # Novel class IDs come after base
+            
+            if novel_cls_id not in base_protos:
+                logger.debug(f"Novel class {novel_class} (id={novel_cls_id}) not in prototypes, skipping")
+                continue
+            
+            # Get the original support prototype
+            novel_proto_bank = base_protos[novel_cls_id].get("global", {})
+            original_protos = novel_proto_bank.get("protos", None)
+            
+            if original_protos is None or original_protos.numel() == 0:
+                logger.debug(f"No prototype for {novel_class}, skipping")
+                continue
+            
+            # Compute interpolated prototype from base classes
+            try:
+                interpolated = self.interpolator.interpolate_weights(
+                    novel_class=novel_class,
+                    base_classes=available_base_classes,
+                    base_weights=base_proto_tensor.to(self.interpolator.device)
+                )
+                interpolated = interpolated.to(device)
+            except Exception as e:
+                logger.warning(f"Failed to interpolate for {novel_class}: {e}")
+                continue
+            
+            # Blend each prototype in the bank
+            blended_protos = []
+            for proto_idx in range(original_protos.shape[0]):
+                original = original_protos[proto_idx]
+                blended = (
+                    (1 - self.blend_weight) * original +
+                    self.blend_weight * interpolated
+                )
+                blended = F.normalize(blended, dim=-1)
+                blended_protos.append(blended)
+            
+            # Update the prototype bank
+            base_protos[novel_cls_id]["global"]["protos"] = torch.stack(blended_protos)
+            
+            # Log the blending
+            nearest, weights = self.interpolator.semantic_sim.get_nearest_base_classes(
+                novel_class, available_base_classes, self.interpolator.top_k
+            )
+            weight_strs = [f"{c}:{w:.2f}" for c, w in zip(nearest, weights.tolist())]
+            logger.info(f"  {novel_class}: blended with {', '.join(weight_strs)}")
+        
+        self._prototype_computed = True
+        logger.info("Prototype blending completed")
     
     def _compute_interpolated_prototypes(self, base_prototypes: Dict[int, torch.Tensor]):
         """
