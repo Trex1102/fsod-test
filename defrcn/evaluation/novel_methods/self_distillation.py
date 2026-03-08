@@ -308,45 +308,85 @@ class SelfDistilledPCB:
         In online mode:
         - Continuously update prototypes as pseudo-labels are collected
         """
+        import cv2
+        
         # First run normal calibration
         calibrated_dts = self.base_pcb.execute_calibration(inputs, dts)
         
         # Collect pseudo-labels from calibrated predictions
         if len(calibrated_dts) > 0 and len(calibrated_dts[0]["instances"]) > 0:
             instances = calibrated_dts[0]["instances"]
-            
-            # Extract features for high-confidence detections
-            # Note: This requires re-extracting features, which is expensive
-            # In practice, features should be cached during calibration
             scores = instances.scores
             pred_classes = instances.pred_classes
+            pred_boxes = instances.pred_boxes
             
-            # Filter by PCB's operating range
+            # Filter by PCB's operating range AND confidence threshold
             mask = (scores > self.base_pcb.pcb_lower) & (scores <= self.base_pcb.pcb_upper)
+            high_conf_mask = mask & (scores > self.distiller.confidence_threshold)
             
-            if mask.any():
-                # Get features from base PCB's last extraction
-                # This is a simplified version - full implementation would cache features
-                high_conf_mask = scores > self.distiller.confidence_threshold
-                
-                if high_conf_mask.any():
-                    # Simulate feature collection (in practice, use cached features)
-                    # Here we use the calibrated scores as a proxy for quality
-                    high_scores = scores[high_conf_mask]
-                    high_classes = pred_classes[high_conf_mask]
+            if high_conf_mask.any():
+                # Actually extract features for high-confidence detections
+                img = cv2.imread(inputs[0]["file_name"])
+                if img is not None:
+                    # Get boxes for high-confidence detections
+                    hi_boxes = pred_boxes[high_conf_mask]
+                    hi_scores = scores[high_conf_mask]
+                    hi_classes = pred_classes[high_conf_mask]
                     
-                    # Note: Real implementation would extract actual features
-                    # For now, we track which classes have high-confidence predictions
-                    for i in range(high_scores.shape[0]):
-                        cls = int(high_classes[i].item())
-                        score = float(high_scores[i].item())
+                    if len(hi_boxes) > 0:
+                        # Extract actual RoI features
+                        features = self.base_pcb.extract_roi_features(
+                            img, [hi_boxes.to(self.base_pcb.device)]
+                        ).detach().cpu()
                         
-                        if cls not in self.distiller.pseudo_features:
-                            self.distiller.pseudo_features[cls] = []
-                            self.distiller.pseudo_scores[cls] = []
+                        # Compute prototype similarity for quality filtering
+                        img_h, img_w = img.shape[0], img.shape[1]
+                        box_tensor = hi_boxes.tensor.cpu()
+                        areas = self.base_pcb._normalized_area(box_tensor, img_h, img_w).cpu()
                         
-                        # Count high-confidence detections per class
-                        self.distiller.pseudo_scores[cls].append(score)
+                        for i in range(len(hi_classes)):
+                            cls = int(hi_classes[i].item())
+                            score = float(hi_scores[i].item())
+                            
+                            # Skip excluded classes
+                            if cls in self.base_pcb.exclude_cls:
+                                continue
+                            if cls not in self.base_pcb.prototypes:
+                                continue
+                            
+                            # Compute similarity to check if it's on-manifold
+                            proto_bank = self.base_pcb._select_proto_bank(
+                                cls, float(areas[i].item())
+                            )
+                            if proto_bank is None:
+                                continue
+                            
+                            sim = self.base_pcb._match_similarity(features[i], proto_bank)
+                            
+                            # Check entropy if soft labels available (use sim as proxy)
+                            # Low similarity = high entropy = uncertain = skip
+                            sim01 = max(0.0, min(1.0, (sim + 1.0) / 2.0))
+                            entropy_proxy = 1.0 - sim01  # Use similarity as entropy proxy
+                            if entropy_proxy > self.distiller.entropy_threshold:
+                                continue
+                            
+                            # Initialize storage for class if needed
+                            if cls not in self.distiller.pseudo_features:
+                                self.distiller.pseudo_features[cls] = []
+                                self.distiller.pseudo_scores[cls] = []
+                            
+                            # Store actual feature and score
+                            if len(self.distiller.pseudo_features[cls]) < self.distiller.max_pseudo_per_class:
+                                self.distiller.pseudo_features[cls].append(features[i])
+                                self.distiller.pseudo_scores[cls].append(score)
+                                self.distiller.num_collected += 1
+                            else:
+                                # Replace lowest-score sample if this one is better
+                                min_score = min(self.distiller.pseudo_scores[cls])
+                                if score > min_score:
+                                    min_idx = self.distiller.pseudo_scores[cls].index(min_score)
+                                    self.distiller.pseudo_features[cls][min_idx] = features[i]
+                                    self.distiller.pseudo_scores[cls][min_idx] = score
         
         self.image_count += 1
         

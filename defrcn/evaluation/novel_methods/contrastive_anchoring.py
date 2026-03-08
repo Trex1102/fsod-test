@@ -320,8 +320,14 @@ class ContrastivePrototypeAnchor(nn.Module):
 
 class ContrastiveAnchoredPCB:
     """
-    Wrapper around PrototypicalCalibrationBlock that uses contrastively
-    learned prototype representations for improved calibration.
+    Wrapper around PrototypicalCalibrationBlock that applies contrastive
+    margin-based prototype enhancement during inference.
+    
+    Key change from original: Instead of just passing through to base PCB,
+    this now ACTIVELY enhances prototypes by:
+    1. Computing pairwise prototype similarities
+    2. Pushing apart prototypes that are too similar (below margin)
+    3. Re-normalizing prototypes after enhancement
     """
     
     def __init__(self, base_pcb, cfg, contrastive_module: Optional[ContrastivePrototypeAnchor] = None):
@@ -334,11 +340,19 @@ class ContrastiveAnchoredPCB:
         self.base_pcb = base_pcb
         self.cfg = cfg
         
+        # Extract contrastive config
+        cont_cfg = cfg.NOVEL_METHODS.CONTRASTIVE
+        self.margin = float(cont_cfg.MARGIN)
+        self.temperature = float(cont_cfg.TEMPERATURE)
+        self.num_iterations = 3  # Number of repulsion iterations
+        self.repulsion_strength = 0.1  # How much to push apart
+        
+        # Apply contrastive enhancement to prototypes at init time
+        self._enhance_prototypes_with_margin()
+        
         if contrastive_module is not None:
             self.contrastive = contrastive_module
         else:
-            # Create new module from config
-            cont_cfg = cfg.NOVEL_METHODS.CONTRASTIVE
             self.contrastive = ContrastivePrototypeAnchor(
                 feature_dim=int(cont_cfg.FEATURE_DIM),
                 temperature=float(cont_cfg.TEMPERATURE),
@@ -349,10 +363,113 @@ class ContrastiveAnchoredPCB:
                 loss_weight=float(cont_cfg.LOSS_WEIGHT)
             )
     
+    def _enhance_prototypes_with_margin(self):
+        """
+        Enhance prototypes by applying margin-based repulsion.
+        
+        This pushes prototypes apart that are closer than the margin,
+        improving class separability during inference.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not hasattr(self.base_pcb, 'prototypes') or not self.base_pcb.prototypes:
+            logger.warning("ContrastiveAnchoredPCB: No prototypes found in base PCB")
+            return
+        
+        # Collect all global prototypes
+        cls_list = list(self.base_pcb.prototypes.keys())
+        if len(cls_list) < 2:
+            logger.info("ContrastiveAnchoredPCB: Only %d class(es), skipping margin enhancement", len(cls_list))
+            return
+        
+        # Get prototype vectors (use mean if multi-prototype)
+        proto_vectors = []
+        for cls in cls_list:
+            entry = self.base_pcb.prototypes[cls]
+            protos = entry["global"]["protos"]
+            weights = entry["global"]["weights"]
+            if protos.shape[0] == 0:
+                continue
+            # Weighted mean of prototypes for this class
+            weighted_proto = torch.sum(protos * weights.unsqueeze(1), dim=0)
+            proto_vectors.append(weighted_proto)
+        
+        if len(proto_vectors) < 2:
+            return
+        
+        proto_tensor = torch.stack(proto_vectors, dim=0)  # (C, D)
+        num_classes = proto_tensor.shape[0]
+        
+        logger.info("ContrastiveAnchoredPCB: Enhancing %d class prototypes with margin=%.2f, threshold=%.2f", 
+                   num_classes, self.margin, 1.0 - self.margin)
+
+        # Log initial pairwise similarities
+        proto_normed = F.normalize(proto_tensor, dim=1)
+        sim_matrix = torch.mm(proto_normed, proto_normed.t())
+        max_off_diag = 0.0
+        for i in range(num_classes):
+            for j in range(i+1, num_classes):
+                sim = sim_matrix[i, j].item()
+                max_off_diag = max(max_off_diag, sim)
+                logger.info("  Prototype similarity cls[%d]-cls[%d]: %.4f", cls_list[i], cls_list[j], sim)
+        logger.info("ContrastiveAnchoredPCB: Max pairwise similarity=%.4f, threshold=%.4f", max_off_diag, 1.0 - self.margin)
+
+        # If max similarity is below threshold, no repulsion needed
+        # But we can still apply a small perturbation to improve discriminability
+        threshold = 1.0 - self.margin
+        total_violations = 0
+        
+        # Iterative repulsion
+        for iteration in range(self.num_iterations):
+            # Normalize prototypes
+            proto_normed = F.normalize(proto_tensor, dim=1)
+            
+            # Compute pairwise similarities
+            sim_matrix = torch.mm(proto_normed, proto_normed.t())  # (C, C)
+            
+            # Create repulsion updates
+            updates = torch.zeros_like(proto_tensor)
+            
+            for i in range(num_classes):
+                for j in range(num_classes):
+                    if i == j:
+                        continue
+                    sim = sim_matrix[i, j].item()
+                    if sim > threshold:
+                        total_violations += 1
+                        # Push apart: move prototype i away from j
+                        direction = proto_normed[i] - proto_normed[j]
+                        direction = F.normalize(direction.unsqueeze(0), dim=1).squeeze(0)
+                        # Scale by how much the margin is violated
+                        violation = (sim - threshold) / (1.0 - threshold + 1e-6)
+                        updates[i] += direction * violation * self.repulsion_strength
+            
+            # Apply updates
+            proto_tensor = proto_tensor + updates
+        
+        # Log whether any modifications were made
+        if total_violations > 0:
+            logger.info("ContrastiveAnchoredPCB: Applied %d repulsion updates", total_violations)
+        else:
+            logger.warning("ContrastiveAnchoredPCB: NO violations found - prototypes already well-separated (max_sim=%.4f < threshold=%.4f)", max_off_diag, threshold)
+            logger.warning("ContrastiveAnchoredPCB: Consider lowering margin or using a different enhancement strategy")
+        
+        # Write back enhanced prototypes
+        for idx, cls in enumerate(cls_list):
+            if idx >= len(proto_vectors):
+                break
+            enhanced_proto = F.normalize(proto_tensor[idx].unsqueeze(0), dim=1)
+            # Update the global prototype
+            self.base_pcb.prototypes[cls]["global"]["protos"] = enhanced_proto
+            self.base_pcb.prototypes[cls]["global"]["weights"] = torch.tensor([1.0], device=enhanced_proto.device)
+        
+        logger.info("ContrastiveAnchoredPCB: Prototype enhancement complete")
+    
     def execute_calibration(self, inputs, dts):
         """
-        Delegate to base PCB's execute_calibration.
-        Contrastive learning happens during training, not inference.
+        Execute calibration with contrastively-enhanced prototypes.
+        The enhanced prototypes are already in place from __init__.
         """
         return self.base_pcb.execute_calibration(inputs, dts)
     
@@ -365,7 +482,6 @@ class ContrastiveAnchoredPCB:
     def __getattr__(self, name):
         """Delegate all other attributes to base PCB."""
         return getattr(self.base_pcb, name)
-
 
 def build_contrastive_anchored_pcb(base_pcb, cfg, contrastive_module=None):
     """
