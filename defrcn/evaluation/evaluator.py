@@ -6,6 +6,7 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from detectron2.utils.comm import is_main_process
 from .calibration_layer import PrototypicalCalibrationBlock
+from .novel_methods import build_novel_method_pcb
 
 
 class DatasetEvaluator:
@@ -88,6 +89,12 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
     if cfg.TEST.PCB_ENABLE:
         logger.info("Start initializing PCB module, please wait a seconds...")
         pcb = PrototypicalCalibrationBlock(cfg)
+
+        # Wrap PCB with novel method if enabled
+        if cfg.NOVEL_METHODS.ENABLE and cfg.NOVEL_METHODS.METHOD:
+            method_name = cfg.NOVEL_METHODS.METHOD
+            logger.info(f"Applying novel method: {method_name}")
+            pcb = build_novel_method_pcb(pcb, cfg, method_name)
 
     # Two-pass transductive: collect pseudo-labels in pass 1, rebuild, then evaluate in pass 2.
     if pcb is not None and cfg.TEST.PCB_TRANSDUCTIVE and not cfg.TEST.PCB_TRANS_ONLINE:

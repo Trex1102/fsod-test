@@ -159,6 +159,9 @@ class FrequencyAugmentor:
         """
         Generate augmented prototypes by frequency mixing.
         
+        For N>=2: Mix frequency bands across instances.
+        For N=1: Generate synthetic variations by perturbing frequency bands.
+        
         Args:
             features: Original support features of shape (N, D)
             qualities: Optional quality weights of shape (N,)
@@ -169,11 +172,11 @@ class FrequencyAugmentor:
         N, D = features.shape
         features = features.to(self.device)
         
+        # Handle single-sample case with synthetic frequency perturbation
         if N < 2:
-            # Cannot augment with single sample, return original
-            aug_qualities = qualities if qualities is not None else torch.ones(N, device=self.device)
-            return features, aug_qualities
+            return self._augment_single_sample(features, qualities)
         
+        # Multi-sample case: mix frequency bands across instances
         # Decompose all features
         low_freq, mid_freq, high_freq = self.decompose_frequency(features)
         
@@ -212,7 +215,74 @@ class FrequencyAugmentor:
         all_qualities = torch.cat(quality_list, dim=0)
         
         return all_features, all_qualities
-
+    
+    def _augment_single_sample(
+        self,
+        features: torch.Tensor,
+        qualities: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Generate augmented prototypes from a single sample using frequency perturbation.
+        
+        Strategy: Instead of mixing across samples (impossible with N=1), we:
+        1. Keep low-frequency (semantic content) intact
+        2. Apply controlled perturbations to high-frequency (fine details)
+        3. Use different noise scales for different augmentations
+        
+        Args:
+            features: Single feature tensor of shape (1, D)
+            qualities: Optional quality weight of shape (1,)
+        
+        Returns:
+            Tuple of (augmented_features, augmented_qualities)
+        """
+        N, D = features.shape  # N=1
+        qual = qualities if qualities is not None else torch.ones(N, device=self.device)
+        
+        # Decompose into frequency bands
+        low_freq, mid_freq, high_freq = self.decompose_frequency(features)
+        
+        augmented_list = [features]  # Include original
+        quality_list = [qual]
+        
+        # Perturbation scales - start small and increase
+        # This creates augmentations with varying similarity to original
+        noise_scales = [0.1, 0.2, 0.3][:self.num_augmented]
+        
+        for aug_idx, noise_scale in enumerate(noise_scales):
+            # Generate noise for high-frequency perturbation
+            # Use scaled Gaussian noise proportional to the high-freq magnitude
+            hf_std = torch.std(high_freq).clamp(min=1e-6)
+            noise = torch.randn_like(high_freq) * hf_std * noise_scale
+            
+            # Perturb high-frequency while keeping low-frequency intact
+            # This maintains semantic content while varying fine details
+            perturbed_high = high_freq + noise
+            
+            # Also slightly scale mid-frequency for more variation
+            mid_scale = 1.0 + (torch.rand(1, device=self.device).item() - 0.5) * 0.1 * noise_scale
+            perturbed_mid = mid_freq * mid_scale
+            
+            # Reconstruct
+            augmented = self.reconstruct_from_frequency(low_freq, perturbed_mid, perturbed_high)
+            
+            # Preserve norm if requested
+            if self.preserve_norm:
+                orig_norm = torch.norm(features, dim=1, keepdim=True).clamp(min=1e-8)
+                aug_norm = torch.norm(augmented, dim=1, keepdim=True).clamp(min=1e-8)
+                augmented = augmented * (orig_norm / aug_norm)
+            
+            augmented_list.append(augmented)
+            
+            # Augmented samples get quality weight inversely proportional to perturbation
+            # More perturbation = less reliable = lower quality weight
+            aug_qual = qual * (1.0 - noise_scale * 0.5)
+            quality_list.append(aug_qual)
+        
+        all_features = torch.cat(augmented_list, dim=0)
+        all_qualities = torch.cat(quality_list, dim=0)
+        
+        return all_features, all_qualities
 
 class FrequencyAugmentedPCB:
     """
@@ -247,10 +317,15 @@ class FrequencyAugmentedPCB:
         """
         Rebuild the prototype bank using frequency-augmented features.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Access the raw support data from base PCB
         if not hasattr(self.base_pcb, '_real_class_features'):
+            logger.warning("FrequencyAugmentedPCB: base_pcb has no _real_class_features attribute!")
             return
         
+        logger.info(f"FrequencyAugmentedPCB: Found {len(self.base_pcb._real_class_features)} classes for augmentation")
         new_prototypes = {}
         
         for cls in self.base_pcb._real_class_features:
@@ -266,7 +341,7 @@ class FrequencyAugmentedPCB:
             
             # Apply frequency augmentation
             aug_features, aug_qualities = self.augmentor.augment_prototypes(features, qualities)
-            
+            logger.info(f"  Class {cls}: {features.shape[0]} original -> {aug_features.shape[0]} augmented features")
             # Build prototype bank using base PCB method
             class_entry = {
                 "global": self.base_pcb._build_proto_bank(aug_features.cpu(), aug_qualities.cpu()),

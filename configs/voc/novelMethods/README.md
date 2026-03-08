@@ -14,6 +14,9 @@ modifications that do not require retraining the base model.
 | `uncertainty_weighting` | MC dropout confidence estimation | `NUM_MC_SAMPLES`, `DROPOUT_RATE`, `UNCERTAINTY_THRESHOLD` |
 | `part_graph_reasoning` | Graph neural network part-based matching | `NUM_PARTS`, `PART_DIM`, `NUM_LAYERS` |
 | `clip_grounding` | CLIP vision-language semantic alignment | `CLIP_MODEL`, `VISUAL_WEIGHT`, `TEXT_WEIGHT` |
+| `sam_masked` | **NOVEL**: SAM-based RoI background masking | `CHECKPOINT`, `MODEL_TYPE`, `BLEND_WEIGHT` |
+| `saliency_masked` | **NOVEL**: Feature-based saliency masking (lightweight) | `MODE`, `THRESHOLD_PERCENTILE`, `SOFT_MASK` |
+| `base_weight_interp` | **NOVEL**: CLIP-based semantic weight initialization | `TOP_K`, `TEMPERATURE`, `BLEND_WEIGHT` |
 
 ## Usage
 
@@ -45,3 +48,38 @@ Each config file:
 - All methods are inference-only modifications to PCB
 - Results can be compared directly with vanilla PCB baselines
 - See `docs/novel_fsod_solutions.pdf` for detailed mathematical descriptions
+
+## Novel Methods (NEW - Not in FSOD Literature)
+
+### SAM-Masked Prototype (`sam_masked`)
+
+Uses Segment Anything Model (SAM) to segment object pixels within RoI bounding boxes,
+then pools features only from object-relevant regions. This reduces RoI contamination
+from background pixels (floor, wall, nearby objects).
+
+**Key insight**: Standard RoI pooling includes background that contaminates prototype
+representations, especially problematic for classes like "sofa" where boxes include
+significant background.
+
+**Requirements**: Install SAM (`pip install segment-anything`) and download weights.
+
+### Saliency-Masked Prototype (`saliency_masked`)
+
+Lightweight alternative to SAM that uses feature-based saliency to identify foreground.
+Three modes available:
+- `gradient_magnitude`: Uses spatial gradients (object boundaries)
+- `channel_attention`: Uses channel variance (discriminative features)
+- `spatial_std`: Uses deviation from spatial mean
+
+**Advantage**: No external model needed, very fast.
+
+### Base-Weight Interpolation (`base_weight_interp`)
+
+Initializes novel class prototypes as weighted combinations of semantically similar
+base class prototypes using CLIP text embeddings.
+
+**Example**: `sofa = 0.45*chair + 0.30*bed + 0.25*couch`
+
+**Key insight**: Semantically similar classes share visual features, so their
+classifier weights should be related. This provides a better starting point
+than random/zero initialization, especially critical for 1-shot scenarios.

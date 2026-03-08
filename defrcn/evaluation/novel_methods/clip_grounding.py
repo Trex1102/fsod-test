@@ -164,8 +164,7 @@ class CLIPGrounder(nn.Module):
         # Check cache
         cache_key = ";".join(prompts)
         if self.cache_text_features and cache_key in self.text_features_cache:
-            return self.text_features_cache[cache_key]
-        
+            return self.text_features_cache[cache_key].float()  # Ensure float32 for cached too
         # Encode with CLIP
         with torch.no_grad():
             text_tokens = clip.tokenize(prompts).to(self.device)
@@ -433,11 +432,75 @@ class CLIPGroundedPCB:
     
     def execute_calibration(self, inputs, dts):
         """
-        Execute calibration with CLIP grounding.
+        Execute calibration with CLIP-grounded similarity.
+        
+        This overrides the base PCB's pure visual matching with a combined
+        visual + text-based similarity score.
         """
-        # Use base PCB's calibration
-        # Full implementation would blend text similarity into the calibration
-        return self.base_pcb.execute_calibration(inputs, dts)
+        import cv2
+        
+        if len(dts) == 0 or len(dts[0]["instances"]) == 0:
+            return dts
+        
+        img = cv2.imread(inputs[0]["file_name"])
+        if img is None:
+            return dts
+        img_h, img_w = img.shape[0], img.shape[1]
+        
+        scores = dts[0]["instances"].scores
+        ileft = int((scores > self.base_pcb.pcb_upper).sum().item())
+        iright = int((scores > self.base_pcb.pcb_lower).sum().item())
+        if ileft >= iright:
+            return dts
+        
+        pred_boxes = dts[0]["instances"].pred_boxes[ileft:iright]
+        if len(pred_boxes) == 0:
+            return dts
+        
+        boxes = [pred_boxes.to(self.base_pcb.device)]
+        features = self.base_pcb.extract_roi_features(img, boxes)
+        
+        pred_classes = dts[0]["instances"].pred_classes
+        score_device = scores.device
+        score_dtype = scores.dtype
+        
+        box_tensor = pred_boxes.tensor
+        area_norm = self.base_pcb._normalized_area(box_tensor, img_h, img_w)
+        
+        for i in range(ileft, iright):
+            cls = int(pred_classes[i].item())
+            if cls in self.base_pcb.exclude_cls:
+                continue
+            if cls not in self.base_pcb.prototypes:
+                continue
+            
+            q_idx = i - ileft
+            proto_bank = self.base_pcb._select_proto_bank(cls, float(area_norm[q_idx].item()))
+            if proto_bank is None:
+                continue
+            
+            # Use CLIP-grounded combined similarity instead of pure visual
+            query_feat = features[q_idx]
+            # proto_bank is a dict with 'protos' key containing the tensor
+            proto_features = proto_bank["protos"].to(query_feat.device)
+            if proto_features.shape[0] == 0:
+                continue
+            combined_sim, breakdown = self.matcher.compute_combined_similarity(
+                query_feat, proto_features, cls
+            )
+            
+            # The combined similarity already blends visual + text
+            sim = combined_sim
+            
+            alpha = self.base_pcb._effective_alpha(cls, sim)
+            
+            old_score = float(scores[i].item())
+            fused = old_score * alpha + sim * (1.0 - alpha)
+            fused = self.base_pcb._normalize_score(cls, fused)
+            
+            scores[i] = torch.tensor(fused, device=score_device, dtype=score_dtype)
+        
+        return dts
     
     def get_text_priors(self, class_indices: List[int]) -> torch.Tensor:
         """

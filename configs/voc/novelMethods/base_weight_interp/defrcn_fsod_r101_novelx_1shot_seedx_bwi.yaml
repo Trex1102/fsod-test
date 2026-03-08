@@ -1,0 +1,20 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "base_weight_interp"
+  BASE_WEIGHT_INTERP:
+    ENABLE: True
+    # Number of most similar base classes to interpolate from
+    TOP_K: 3
+    # Temperature for similarity softmax (lower = sharper weights)
+    TEMPERATURE: 0.5
+    # Blend weight: how much to use interpolated vs support prototype
+    # 0.0 = pure support, 1.0 = pure interpolated
+    BLEND_WEIGHT: 0.3
+    # Use class descriptions for richer semantic matching
+    USE_DESCRIPTIONS: True
+    # Apply to prototypes (vs raw classifier weights)
+    APPLY_TO_PROTOTYPES: True

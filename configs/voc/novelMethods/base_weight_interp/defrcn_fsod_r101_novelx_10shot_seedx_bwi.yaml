@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "base_weight_interp"
+  BASE_WEIGHT_INTERP:
+    ENABLE: True
+    TOP_K: 3
+    TEMPERATURE: 0.5
+    BLEND_WEIGHT: 0.3
+    USE_DESCRIPTIONS: True
+    APPLY_TO_PROTOTYPES: True

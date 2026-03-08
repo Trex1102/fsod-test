@@ -1,0 +1,15 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "sam_masked"
+  SAM_MASKED:
+    ENABLE: True
+    CHECKPOINT: ""
+    MODEL_TYPE: "vit_b"
+    MASK_THRESHOLD: 0.0
+    MIN_MASK_RATIO: 0.1
+    BLEND_WEIGHT: 0.5
+    QUALITY_WEIGHTING: True

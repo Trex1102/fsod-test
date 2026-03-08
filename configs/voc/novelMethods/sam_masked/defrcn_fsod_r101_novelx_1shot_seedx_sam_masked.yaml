@@ -1,0 +1,17 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "sam_masked"
+  SAM_MASKED:
+    ENABLE: True
+    # Path to SAM checkpoint - download from:
+    # https://github.com/facebookresearch/segment-anything#model-checkpoints
+    CHECKPOINT: ""
+    MODEL_TYPE: "vit_b"       # vit_h (huge), vit_l (large), vit_b (base)
+    MASK_THRESHOLD: 0.0       # Threshold for binary mask from SAM logits
+    MIN_MASK_RATIO: 0.1       # Min valid mask ratio before fallback
+    BLEND_WEIGHT: 0.5         # Blend SAM-purified vs original prototype
+    QUALITY_WEIGHTING: True   # Weight prototypes by mask quality

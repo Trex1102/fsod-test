@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "saliency_masked"
+  SALIENCY_MASKED:
+    ENABLE: True
+    MODE: "gradient_magnitude"
+    THRESHOLD_PERCENTILE: 50.0
+    SOFT_MASK: True
+    TEMPERATURE: 1.0
+    BLEND_WEIGHT: 0.5

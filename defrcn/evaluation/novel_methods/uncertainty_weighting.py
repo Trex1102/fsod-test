@@ -275,8 +275,9 @@ class UncertaintyWeightedMatcher:
         N = features.shape[0]
         
         if N < 2:
-            # Can't bootstrap with single sample, replicate
-            return features.expand(self.ensemble_size, -1)
+            # Single sample: create ensemble via learned variance perturbation
+            # This ensures diversity for uncertainty estimation even with 1 shot
+            return self._build_single_sample_ensemble(features, qualities)
         
         ensemble = []
         for _ in range(self.ensemble_size):
@@ -291,6 +292,68 @@ class UncertaintyWeightedMatcher:
             sampled = features[indices]
             prototype = torch.mean(sampled, dim=0)
             ensemble.append(prototype)
+        
+        return torch.stack(ensemble, dim=0)
+
+    def _build_single_sample_ensemble(
+        self,
+        features: torch.Tensor,
+        qualities: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Build ensemble from a single sample using perturbation.
+        
+        For 1-shot scenarios, we can't bootstrap, so we create diversity
+        by adding calibrated noise to the prototype. The noise is scaled
+        to be reasonable for feature magnitudes.
+        
+        Args:
+            features: Single feature vector (1, D) or (D,)
+            qualities: Ignored for single sample
+        
+        Returns:
+            Ensemble of perturbed prototypes (ensemble_size, D)
+        """
+        if features.dim() == 1:
+            features = features.unsqueeze(0)
+        
+        # Base prototype
+        prototype = features[0]  # (D,)
+        D = prototype.shape[0]
+        device = prototype.device
+        dtype = prototype.dtype
+        
+        # Compute feature statistics for calibrated perturbation
+        feat_std = torch.std(prototype).clamp(min=1e-6)
+        feat_norm = torch.norm(prototype).clamp(min=1e-6)
+        
+        # Generate ensemble with increasing perturbation scales
+        # Scale factors: small perturbations to maintain semantic meaning
+        perturbation_scales = [0.0, 0.05, 0.1, 0.15, 0.2][:self.ensemble_size]
+        
+        ensemble = []
+        for scale in perturbation_scales:
+            if scale == 0.0:
+                # Original prototype (unperturbed)
+                ensemble.append(prototype.clone())
+            else:
+                # Add Gaussian noise scaled to feature statistics
+                noise = torch.randn(D, device=device, dtype=dtype)
+                # Normalize noise to unit norm, then scale
+                noise = noise / (torch.norm(noise) + 1e-8) * feat_norm * scale
+                perturbed = prototype + noise
+                # Optionally re-normalize to similar magnitude as original
+                perturbed = perturbed * (feat_norm / (torch.norm(perturbed) + 1e-8))
+                ensemble.append(perturbed)
+        
+        # Pad if ensemble_size > len(perturbation_scales)
+        while len(ensemble) < self.ensemble_size:
+            scale = 0.1 + 0.05 * len(ensemble)
+            noise = torch.randn(D, device=device, dtype=dtype)
+            noise = noise / (torch.norm(noise) + 1e-8) * feat_norm * scale
+            perturbed = prototype + noise
+            perturbed = perturbed * (feat_norm / (torch.norm(perturbed) + 1e-8))
+            ensemble.append(perturbed)
         
         return torch.stack(ensemble, dim=0)
     

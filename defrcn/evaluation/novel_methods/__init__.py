@@ -11,6 +11,8 @@ Methods:
 4. Uncertainty Weighting - MC dropout confidence estimation
 5. Part-Graph Reasoning - Compositional part-based matching
 6. CLIP Grounding - Vision-language semantic alignment
+7. SAM-Masked Prototype - Segment-based RoI purification (NOVEL)
+8. Base-Weight Interpolation - Semantic weight initialization (NOVEL)
 """
 
 from .frequency_augmentation import (
@@ -59,6 +61,30 @@ from .clip_grounding import (
     COCO_CLASS_NAMES
 )
 
+from .sam_masked_prototype import (
+    SAMMaskedPrototypeExtractor,
+    SAMMaskedPCB,
+    build_sam_masked_pcb,
+    SaliencyMaskedPrototypeExtractor,
+    SaliencyMaskedPCB,
+    build_saliency_masked_pcb,
+    GrabCutMaskedPrototypeExtractor
+)
+
+from .base_weight_interpolation import (
+    CLIPSemanticSimilarity,
+    BaseWeightInterpolator,
+    BaseWeightInterpolatedPCB,
+    build_base_weight_interpolated_pcb,
+    analyze_class_similarity,
+    VOC_BASE_CLASSES_SPLIT1,
+    VOC_NOVEL_CLASSES_SPLIT1,
+    VOC_BASE_CLASSES_SPLIT2,
+    VOC_NOVEL_CLASSES_SPLIT2,
+    VOC_BASE_CLASSES_SPLIT3,
+    VOC_NOVEL_CLASSES_SPLIT3
+)
+
 __all__ = [
     # Frequency Augmentation
     "FrequencyAugmentor",
@@ -94,8 +120,27 @@ __all__ = [
     "VOC_CLASS_NAMES",
     "VOC_CLASS_DESCRIPTIONS",
     "COCO_CLASS_NAMES",
+    # SAM-Masked Prototype (NOVEL)
+    "SAMMaskedPrototypeExtractor",
+    "SAMMaskedPCB",
+    "build_sam_masked_pcb",
+    "SaliencyMaskedPrototypeExtractor",
+    "SaliencyMaskedPCB",
+    "build_saliency_masked_pcb",
+    "GrabCutMaskedPrototypeExtractor",
+    # Base-Weight Interpolation (NOVEL)
+    "CLIPSemanticSimilarity",
+    "BaseWeightInterpolator",
+    "BaseWeightInterpolatedPCB",
+    "build_base_weight_interpolated_pcb",
+    "analyze_class_similarity",
+    "VOC_BASE_CLASSES_SPLIT1",
+    "VOC_NOVEL_CLASSES_SPLIT1",
+    "VOC_BASE_CLASSES_SPLIT2",
+    "VOC_NOVEL_CLASSES_SPLIT2",
+    "VOC_BASE_CLASSES_SPLIT3",
+    "VOC_NOVEL_CLASSES_SPLIT3",
 ]
-
 
 def build_novel_method_pcb(base_pcb, cfg, method_name: str):
     """
@@ -122,6 +167,13 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "part_graph_reasoning": build_part_graph_pcb,
         "clip": build_clip_grounded_pcb,
         "clip_grounding": build_clip_grounded_pcb,
+        "sam_masked": build_sam_masked_pcb,
+        "sam": build_sam_masked_pcb,
+        "saliency_masked": build_saliency_masked_pcb,
+        "saliency": build_saliency_masked_pcb,
+        "base_weight_interp": build_base_weight_interpolated_pcb,
+        "base_weight": build_base_weight_interpolated_pcb,
+        "bwi": build_base_weight_interpolated_pcb,
     }
     
     method_name_lower = method_name.lower()

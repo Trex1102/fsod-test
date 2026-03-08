@@ -251,3 +251,36 @@ _CC.NOVEL_METHODS.CLIP_GROUND.CLIP_MODEL = "ViT-B/32"  # CLIP model variant
 _CC.NOVEL_METHODS.CLIP_GROUND.VISUAL_WEIGHT = 0.7   # Weight for visual similarity
 _CC.NOVEL_METHODS.CLIP_GROUND.TEXT_WEIGHT = 0.3     # Weight for text similarity
 _CC.NOVEL_METHODS.CLIP_GROUND.USE_DESCRIPTIONS = True  # Use class descriptions
+
+# ----- 7) SAM-Masked Prototype Purification ----- #
+# Uses Segment Anything Model to mask out background pixels in RoI
+# before prototype pooling, reducing RoI contamination.
+_CC.NOVEL_METHODS.SAM_MASKED = CN()
+_CC.NOVEL_METHODS.SAM_MASKED.ENABLE = False
+_CC.NOVEL_METHODS.SAM_MASKED.CHECKPOINT = ""           # Path to SAM checkpoint
+_CC.NOVEL_METHODS.SAM_MASKED.MODEL_TYPE = "vit_b"      # vit_h, vit_l, vit_b
+_CC.NOVEL_METHODS.SAM_MASKED.MASK_THRESHOLD = 0.0      # Threshold for binary mask
+_CC.NOVEL_METHODS.SAM_MASKED.MIN_MASK_RATIO = 0.1      # Min valid mask ratio
+_CC.NOVEL_METHODS.SAM_MASKED.BLEND_WEIGHT = 0.5        # Blend SAM vs original prototype
+_CC.NOVEL_METHODS.SAM_MASKED.QUALITY_WEIGHTING = True  # Weight by mask quality
+
+# ----- 7b) Saliency-Masked Prototype (lightweight alternative) ----- #
+# Uses feature-based saliency instead of SAM (no external model needed)
+_CC.NOVEL_METHODS.SALIENCY_MASKED = CN()
+_CC.NOVEL_METHODS.SALIENCY_MASKED.ENABLE = False
+_CC.NOVEL_METHODS.SALIENCY_MASKED.MODE = "gradient_magnitude"  # gradient_magnitude, channel_attention, spatial_std
+_CC.NOVEL_METHODS.SALIENCY_MASKED.THRESHOLD_PERCENTILE = 50.0
+_CC.NOVEL_METHODS.SALIENCY_MASKED.SOFT_MASK = True
+_CC.NOVEL_METHODS.SALIENCY_MASKED.TEMPERATURE = 1.0
+_CC.NOVEL_METHODS.SALIENCY_MASKED.BLEND_WEIGHT = 0.5
+
+# ----- 8) Base-Weight Interpolation Initialization ----- #
+# Initializes novel class weights as weighted combination of base class
+# weights using CLIP semantic similarity. Provides better starting point.
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP = CN()
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.ENABLE = False
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.TOP_K = 3           # Number of base classes to interpolate from
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.TEMPERATURE = 0.5   # Temperature for similarity softmax
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.BLEND_WEIGHT = 0.3  # Blend with support prototypes
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.USE_DESCRIPTIONS = True  # Use class descriptions
+_CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.APPLY_TO_PROTOTYPES = True  # Apply to prototypes vs raw weights
