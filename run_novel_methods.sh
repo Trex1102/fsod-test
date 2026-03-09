@@ -26,11 +26,17 @@ show_usage() {
     echo "  seeds     : Random seeds (default: \"0\")"
     echo "  run_mode  : finetune or infer_pretrained_novel (default: \"finetune\")"
     echo ""
+    echo "Environment variables:"
+    echo "  META_PCB_EPISODES : Meta-training episodes for meta_pcb (default: 10000)"
+    echo "  META_PCB_N_WAY    : N-way for meta-training episodes (default: 5)"
+    echo "  META_PCB_K_SHOT   : K-shot for meta-training episodes (default: 1)"
+    echo ""
     echo "Examples:"
     echo "  bash run_novel_methods.sh 1"
     echo "  bash run_novel_methods.sh 1 freq_aug"
     echo "  bash run_novel_methods.sh 1 all \"2 3 5 10\" \"0 1 2 3 4\""
     echo "  bash run_novel_methods.sh 1 freq_aug \"1 5\" \"0\" infer_pretrained_novel"
+    echo "  META_PCB_EPISODES=5000 bash run_novel_methods.sh 1 meta_pcb"
 }
 
 if [ -z "${SPLIT_ID}" ]; then
@@ -130,10 +136,46 @@ for method in ${METHODS}; do
     
     echo ""
     echo ">>> Running method: ${method} (${METHOD_DIR})"
-    
+
     METHOD_SAVE_DIR=${SAVE_DIR}/${RUN_MODE_DIR}/${METHOD_DIR}/split${SPLIT_ID}
     mkdir -p ${METHOD_SAVE_DIR}
-    
+
+    # Meta-PCB: train the calibrator before evaluation if not already trained
+    CALIBRATOR_PATH=""
+    if [ "${method}" = "meta_pcb" ]; then
+        CALIBRATOR_DIR=calibrators
+        CALIBRATOR_FILE=${CALIBRATOR_DIR}/meta_pcb_split${SPLIT_ID}.pth
+
+        if [ -f "${CALIBRATOR_FILE}" ]; then
+            echo "  Found existing calibrator: ${CALIBRATOR_FILE}"
+        else
+            echo "  Meta-training calibrator for split ${SPLIT_ID}..."
+            BASE_CONFIG=configs/voc/defrcn_det_r101_base${SPLIT_ID}.yaml
+            BASE_MODEL=${BASE_WEIGHT_DIR}/model_final.pth
+
+            if [ ! -f "${BASE_MODEL}" ]; then
+                echo "  Warning: Base model not found at ${BASE_MODEL}"
+                echo "  Skipping meta-training. Calibrator will use residual-initialized baseline (≈ vanilla PCB)."
+            else
+                python3 tools/meta_train_calibrator.py \
+                    --config-file ${BASE_CONFIG} \
+                    --base-model ${BASE_MODEL} \
+                    --pcb-modelpath ${IMAGENET_PRETRAIN_TORCH} \
+                    --output ${CALIBRATOR_FILE} \
+                    --episodes ${META_PCB_EPISODES:-10000} \
+                    --n-way ${META_PCB_N_WAY:-5} \
+                    --k-shot ${META_PCB_K_SHOT:-1} \
+                    --hidden-dim 64 \
+                    --lr 1e-3
+                echo "  Calibrator saved to ${CALIBRATOR_FILE}"
+            fi
+        fi
+
+        if [ -f "${CALIBRATOR_FILE}" ]; then
+            CALIBRATOR_PATH=${CALIBRATOR_FILE}
+        fi
+    fi
+
     for shot in ${SHOTS}; do
         for seed in ${SEEDS}; do
             echo ""
@@ -155,6 +197,12 @@ for method in ${METHODS}; do
             
             OUTPUT_DIR=${METHOD_SAVE_DIR}/${shot}shot_seed${seed}
             
+            # Build extra opts for method-specific config overrides
+            EXTRA_OPTS=()
+            if [ -n "${CALIBRATOR_PATH}" ]; then
+                EXTRA_OPTS+=(NOVEL_METHODS.META_PCB.CALIBRATOR_PATH "${CALIBRATOR_PATH}")
+            fi
+
             if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
                 MODEL_WEIGHT=${PRETRAINED_NOVEL_ROOT}/split${SPLIT_ID}/${shot}shot_seed${seed}/model_final.pth
                 if [ ! -f "${MODEL_WEIGHT}" ]; then
@@ -170,6 +218,7 @@ for method in ${METHODS}; do
                     MODEL.WEIGHTS ${MODEL_WEIGHT}
                     OUTPUT_DIR ${OUTPUT_DIR}
                     TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+                    "${EXTRA_OPTS[@]}"
                 )
             else
                 MODEL_WEIGHT=${BASE_WEIGHT}
@@ -180,6 +229,7 @@ for method in ${METHODS}; do
                     MODEL.WEIGHTS ${MODEL_WEIGHT}
                     OUTPUT_DIR ${OUTPUT_DIR}
                     TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+                    "${EXTRA_OPTS[@]}"
                 )
             fi
             

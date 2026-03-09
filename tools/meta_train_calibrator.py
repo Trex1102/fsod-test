@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from detectron2.config import get_cfg
 from defrcn.config import defaults  # noqa: register custom config
+import defrcn.data  # noqa: register VOC/COCO datasets
 from defrcn.evaluation.novel_methods.meta_calibration import MetaCalibrationNet
 from defrcn.evaluation.calibration_layer import PrototypicalCalibrationBlock
 
@@ -50,6 +51,10 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--hidden-dim", type=int, default=64, help="Calibrator hidden dim")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--pcb-modelpath", default="",
+        help="Path to ImageNet pretrained model for PCB (e.g., resnet101-5d3b4d8f.pth)",
+    )
     parser.add_argument("--opts", nargs=argparse.REMAINDER, default=[])
     return parser.parse_args()
 
@@ -60,6 +65,8 @@ def setup_cfg(args):
     if args.opts:
         cfg.merge_from_list(args.opts)
     cfg.MODEL.WEIGHTS = args.base_model
+    if args.pcb_modelpath:
+        cfg.TEST.PCB_MODELPATH = args.pcb_modelpath
     cfg.freeze()
     return cfg
 
@@ -223,16 +230,16 @@ def train(args, cfg):
         if not examples:
             continue
 
-        # Batch all examples
-        det_scores = torch.tensor([e["det_score"] for e in examples], device=device)
-        cos_sims = torch.tensor([e["cos_sim"] for e in examples], device=device)
-        mean_norms = torch.tensor([e["mean_norm"] for e in examples], device=device)
-        std_norms = torch.tensor([e["std_norm"] for e in examples], device=device)
-        count_norms = torch.tensor([e["count_norm"] for e in examples], device=device)
-        dispersions = torch.tensor([e["dispersion"] for e in examples], device=device)
-        roi_norms = torch.tensor([e["roi_norm"] for e in examples], device=device)
-        entropies = torch.tensor([e["score_entropy"] for e in examples], device=device)
-        labels = torch.tensor([e["label"] for e in examples], device=device)
+        # Batch all examples (must be float32 to match model weights)
+        det_scores = torch.tensor([e["det_score"] for e in examples], device=device, dtype=torch.float32)
+        cos_sims = torch.tensor([e["cos_sim"] for e in examples], device=device, dtype=torch.float32)
+        mean_norms = torch.tensor([e["mean_norm"] for e in examples], device=device, dtype=torch.float32)
+        std_norms = torch.tensor([e["std_norm"] for e in examples], device=device, dtype=torch.float32)
+        count_norms = torch.tensor([e["count_norm"] for e in examples], device=device, dtype=torch.float32)
+        dispersions = torch.tensor([e["dispersion"] for e in examples], device=device, dtype=torch.float32)
+        roi_norms = torch.tensor([e["roi_norm"] for e in examples], device=device, dtype=torch.float32)
+        entropies = torch.tensor([e["score_entropy"] for e in examples], device=device, dtype=torch.float32)
+        labels = torch.tensor([e["label"] for e in examples], device=device, dtype=torch.float32)
 
         calibrated = calibrator(
             det_scores, cos_sims,

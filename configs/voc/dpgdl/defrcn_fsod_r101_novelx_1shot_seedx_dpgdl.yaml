@@ -1,11 +1,11 @@
 _BASE_: "../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
 MODEL:
   RPN:
-    ENABLE_DECOUPLE: False
-    BACKWARD_SCALE: 1.0
+    ENABLE_DECOUPLE: True
+    BACKWARD_SCALE: 0.0
   ROI_HEADS:
-    ENABLE_DECOUPLE: False
-    BACKWARD_SCALE: 1.0
+    ENABLE_DECOUPLE: True
+    BACKWARD_SCALE: 0.75
   DYNAMIC_GDL:
     ENABLE: True
     REDUCTION: 16

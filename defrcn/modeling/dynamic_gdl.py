@@ -233,9 +233,12 @@ def build_dynamic_gdl_modules(cfg, backbone_shape):
 def install_dynamic_gdl(model, cfg):
     """Install dynamic GDL modules into an existing GeneralizedRCNN.
 
-    This replaces the fixed decouple_layer calls with dynamic gating.
-    The model's _forward_once_ method is monkey-patched to use the
-    dynamic modules.
+    The dynamic modules work alongside the existing fixed GDL (decouple_layer).
+    The fixed GDL provides stable base gradient scaling while the dynamic
+    modules add a learned per-channel refinement on top.
+
+    The model's _forward_once_ is patched to apply the DynamicGDL modules
+    AFTER the standard decouple_layer + affine processing.
 
     Args:
         model: GeneralizedRCNN instance
@@ -247,10 +250,11 @@ def install_dynamic_gdl(model, cfg):
     gdl_cfg = cfg.MODEL.DYNAMIC_GDL
     backbone_shape = model.backbone.output_shape()
 
-    # Build and register dynamic modules
+    # Build and register dynamic modules, ensure they're on the model's device
+    device = next(model.parameters()).device
     modules = build_dynamic_gdl_modules(cfg, backbone_shape)
     for name, module in modules.items():
-        model.add_module(name, module)
+        model.add_module(name, module.to(device))
 
     logger.info(
         "DP-GDL: Installed %d dynamic modules (reduction=%d, dual_pathway=%s)",
@@ -263,10 +267,14 @@ def install_dynamic_gdl(model, cfg):
     model._dynamic_gdl_modules = modules
     model._dynamic_gdl_cfg = gdl_cfg
 
-    # Monkey-patch _forward_once_ to use dynamic GDL
+    # Monkey-patch _forward_once_ to apply dynamic GDL after standard processing
     original_forward = model._forward_once_
 
     def _forward_once_dynamic(batched_inputs, gt_instances=None):
+        # Run the original forward (which applies fixed GDL + affine)
+        # but intercept features after decouple to add dynamic refinement
+        from defrcn.modeling.meta_arch.gdl import decouple_layer
+
         images = model.preprocess_image(batched_inputs)
         features = model.backbone(images.tensor)
 
@@ -283,37 +291,49 @@ def install_dynamic_gdl(model, cfg):
                 features_rpn, features_rcnn
             )
 
-        # Dynamic GDL for RPN (replaces fixed decouple_layer)
-        features_de_rpn = {}
-        for k, v in features_rpn.items():
-            gdl_key = f"dynamic_gdl_rpn_{k}"
-            if gdl_key in model._dynamic_gdl_modules:
-                features_de_rpn[k] = model._dynamic_gdl_modules[gdl_key](v)
-                if k == model.rpn_affine_feature:
-                    features_de_rpn[k] = model.affine_rpn(features_de_rpn[k])
-            else:
-                features_de_rpn[k] = v
+        # RPN: fixed GDL + dynamic refinement
+        features_de_rpn = features_rpn
+        if model.cfg.MODEL.RPN.ENABLE_DECOUPLE:
+            scale = model.cfg.MODEL.RPN.BACKWARD_SCALE
+            features_de_rpn = {}
+            for k, v in features_rpn.items():
+                if k in model.rpn_in_features:
+                    x = decouple_layer(v, scale)
+                    if k == model.rpn_affine_feature:
+                        x = model.affine_rpn(x)
+                    # Apply dynamic GDL refinement
+                    gdl_key = f"dynamic_gdl_rpn_{k}"
+                    if gdl_key in model._dynamic_gdl_modules:
+                        x = model._dynamic_gdl_modules[gdl_key](x)
+                    features_de_rpn[k] = x
+                else:
+                    features_de_rpn[k] = v
 
         proposals, proposal_losses = model.proposal_generator(
             images, features_de_rpn, gt_instances
         )
 
-        # Dynamic GDL for RCNN (replaces fixed decouple_layer)
-        features_de_rcnn = {}
-        for k, v in features_rcnn.items():
-            gdl_key = f"dynamic_gdl_rcnn_{k}"
-            if gdl_key in model._dynamic_gdl_modules:
-                features_de_rcnn[k] = model._dynamic_gdl_modules[gdl_key](v)
-                # Optional dual pathway routing
-                dp_key = f"dual_pathway_{k}"
-                if dp_key in model._dynamic_gdl_modules:
-                    features_de_rcnn[k] = model._dynamic_gdl_modules[dp_key](
-                        features_de_rcnn[k]
-                    )
-                if k == model.roi_affine_feature:
-                    features_de_rcnn[k] = model.affine_rcnn(features_de_rcnn[k])
-            else:
-                features_de_rcnn[k] = v
+        # RCNN: fixed GDL + dynamic refinement + optional dual pathway
+        features_de_rcnn = features_rcnn
+        if model.cfg.MODEL.ROI_HEADS.ENABLE_DECOUPLE:
+            scale = model.cfg.MODEL.ROI_HEADS.BACKWARD_SCALE
+            features_de_rcnn = {}
+            for k, v in features_rcnn.items():
+                if k in model.roi_in_features:
+                    x = decouple_layer(v, scale)
+                    if k == model.roi_affine_feature:
+                        x = model.affine_rcnn(x)
+                    # Apply dynamic GDL refinement
+                    gdl_key = f"dynamic_gdl_rcnn_{k}"
+                    if gdl_key in model._dynamic_gdl_modules:
+                        x = model._dynamic_gdl_modules[gdl_key](x)
+                    # Optional dual pathway routing
+                    dp_key = f"dual_pathway_{k}"
+                    if dp_key in model._dynamic_gdl_modules:
+                        x = model._dynamic_gdl_modules[dp_key](x)
+                    features_de_rcnn[k] = x
+                else:
+                    features_de_rcnn[k] = v
 
         results, detector_losses = model.roi_heads(
             images, features_de_rcnn, proposals, gt_instances
