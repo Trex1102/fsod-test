@@ -48,6 +48,40 @@ class FoundationModelFeatureExtractor:
 
         self._load_model(model_name, model_path)
 
+    @staticmethod
+    def _patch_dinov2_for_py38():
+        """Patch cached DINOv2 source files for Python < 3.10 compatibility.
+
+        DINOv2 uses PEP 604 union syntax (float | None) which requires Python 3.10+.
+        This patches the cached files to use Optional[float] instead.
+        """
+        import sys
+        if sys.version_info >= (3, 10):
+            return
+
+        import glob
+        import os
+        hub_dir = torch.hub.get_dir()
+        dinov2_dirs = glob.glob(os.path.join(hub_dir, "facebookresearch_dinov2*"))
+        for d in dinov2_dirs:
+            for root, _, files in os.walk(d):
+                for fname in files:
+                    if not fname.endswith(".py"):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, "r") as f:
+                            content = f.read()
+                        if "float | None" in content or "int | None" in content or "str | None" in content:
+                            # Add from __future__ import annotations at top if not present
+                            if "from __future__ import annotations" not in content:
+                                content = "from __future__ import annotations\n" + content
+                                with open(fpath, "w") as f:
+                                    f.write(content)
+                                logger.debug("Patched %s for Python 3.8 compatibility", fpath)
+                    except Exception:
+                        pass
+
     def _load_model(self, model_name: str, model_path: str):
         """Load the foundation model."""
         try:
@@ -56,11 +90,32 @@ class FoundationModelFeatureExtractor:
                 self.model = torch.load(model_path, map_location="cpu")
             else:
                 logger.info("Loading foundation model via torch.hub: %s", model_name)
-                self.model = torch.hub.load(
-                    "facebookresearch/dinov2",
-                    model_name,
-                    pretrained=True,
-                )
+                # Patch cached DINOv2 source for Python < 3.10 compatibility
+                self._patch_dinov2_for_py38()
+                try:
+                    self.model = torch.hub.load(
+                        "facebookresearch/dinov2",
+                        model_name,
+                        pretrained=True,
+                    )
+                except TypeError as e:
+                    if "unsupported operand type" in str(e):
+                        # First load downloaded repo but failed on PEP 604 syntax.
+                        # Patch and retry.
+                        logger.info("Patching DINOv2 for Python <3.10 compatibility and retrying...")
+                        self._patch_dinov2_for_py38()
+                        # Clear cached modules so patched files are re-imported
+                        import sys as _sys
+                        mods_to_remove = [k for k in _sys.modules if "dinov2" in k]
+                        for k in mods_to_remove:
+                            del _sys.modules[k]
+                        self.model = torch.hub.load(
+                            "facebookresearch/dinov2",
+                            model_name,
+                            pretrained=True,
+                        )
+                    else:
+                        raise
 
             self.model = self.model.to(self.device)
             self.model.eval()
