@@ -13,6 +13,9 @@ Methods:
 6. CLIP Grounding - Vision-language semantic alignment
 7. SAM-Masked Prototype - Segment-based RoI purification (NOVEL)
 8. Base-Weight Interpolation - Semantic weight initialization (NOVEL)
+9. PCB-FMA - Foundation Model Alignment for PCB prototypes (NOVEL)
+10. Meta-PCB - Meta-learned non-linear calibration (NOVEL)
+11. UPR-TTA - Uncertainty-guided Prototype Refinement + TTA (NOVEL)
 """
 
 from .frequency_augmentation import (
@@ -85,6 +88,25 @@ from .base_weight_interpolation import (
     VOC_NOVEL_CLASSES_SPLIT3
 )
 
+from .pcb_fma import (
+    FoundationModelFeatureExtractor,
+    PCBFMA,
+    build_pcb_fma,
+)
+
+from .meta_calibration import (
+    MetaCalibrationNet,
+    MetaPCB,
+    build_meta_pcb,
+)
+
+from .upr_tta import (
+    MCDropoutFeatureEstimator,
+    UncertaintyGuidedPseudoLabeler,
+    UPRTTA,
+    build_upr_tta,
+)
+
 __all__ = [
     # Frequency Augmentation
     "FrequencyAugmentor",
@@ -140,6 +162,19 @@ __all__ = [
     "VOC_NOVEL_CLASSES_SPLIT2",
     "VOC_BASE_CLASSES_SPLIT3",
     "VOC_NOVEL_CLASSES_SPLIT3",
+    # PCB-FMA (NOVEL)
+    "FoundationModelFeatureExtractor",
+    "PCBFMA",
+    "build_pcb_fma",
+    # Meta-PCB (NOVEL)
+    "MetaCalibrationNet",
+    "MetaPCB",
+    "build_meta_pcb",
+    # UPR-TTA (NOVEL)
+    "MCDropoutFeatureEstimator",
+    "UncertaintyGuidedPseudoLabeler",
+    "UPRTTA",
+    "build_upr_tta",
 ]
 
 def build_novel_method_pcb(base_pcb, cfg, method_name: str):
@@ -174,6 +209,15 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "base_weight_interp": build_base_weight_interpolated_pcb,
         "base_weight": build_base_weight_interpolated_pcb,
         "bwi": build_base_weight_interpolated_pcb,
+        "pcb_fma": build_pcb_fma,
+        "fma": build_pcb_fma,
+        "foundation_model": build_pcb_fma,
+        "meta_pcb": build_meta_pcb,
+        "meta_calibration": build_meta_pcb,
+        "meta": build_meta_pcb,
+        "upr_tta": build_upr_tta,
+        "upr": build_upr_tta,
+        "uncertainty_refinement": build_upr_tta,
     }
     
     method_name_lower = method_name.lower()

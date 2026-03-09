@@ -96,8 +96,15 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
             logger.info(f"Applying novel method: {method_name}")
             pcb = build_novel_method_pcb(pcb, cfg, method_name)
 
+    # UPR-TTA two-pass: uncertainty-guided pseudo-label collection (replaces standard transductive)
+    if pcb is not None and hasattr(pcb, 'run_pass1') and cfg.NOVEL_METHODS.ENABLE:
+        method_name = cfg.NOVEL_METHODS.METHOD.lower()
+        if method_name in ("upr_tta", "upr", "uncertainty_refinement"):
+            with inference_context(model):
+                pcb.run_pass1(model, data_loader)
+
     # Two-pass transductive: collect pseudo-labels in pass 1, rebuild, then evaluate in pass 2.
-    if pcb is not None and cfg.TEST.PCB_TRANSDUCTIVE and not cfg.TEST.PCB_TRANS_ONLINE:
+    elif pcb is not None and cfg.TEST.PCB_TRANSDUCTIVE and not cfg.TEST.PCB_TRANS_ONLINE:
         logger.info(
             "Transductive inference pass 1: collecting pseudo-labels over %d images...",
             len(data_loader),

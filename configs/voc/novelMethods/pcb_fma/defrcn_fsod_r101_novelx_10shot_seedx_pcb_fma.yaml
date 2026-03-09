@@ -1,0 +1,18 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_10shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "pcb_fma"
+  PCB_FMA:
+    ENABLE: True
+    FM_MODEL_NAME: "dinov2_vitb14"
+    FM_MODEL_PATH: ""
+    FM_FEAT_DIM: 768
+    ROI_SIZE: 224
+    DET_WEIGHT: 0.4
+    FM_WEIGHT: 0.6
+    USE_ORIGINAL_PCB: True
+    ORIGINAL_PCB_WEIGHT: 0.3
+    BATCH_SIZE: 32

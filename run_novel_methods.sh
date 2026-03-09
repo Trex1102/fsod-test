@@ -11,7 +11,7 @@
 set -e
 
 SPLIT_ID=$1
-METHOD=${2:-"all"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip
+METHOD=${2:-"all"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_fma, meta_pcb, upr_tta
 SHOTS=${3:-"1 2 3 5 10"}
 SEEDS=${4:-"0"}
 RUN_MODE=${5:-"infer_pretrained_novel"}  # finetune, infer_pretrained_novel
@@ -81,6 +81,9 @@ METHOD_NAMES["self_distill"]="self_distillation"
 METHOD_NAMES["uncertainty"]="uncertainty_weighting"
 METHOD_NAMES["part_graph"]="part_graph_reasoning"
 METHOD_NAMES["clip"]="clip_grounding"
+METHOD_NAMES["pcb_fma"]="pcb_fma"
+METHOD_NAMES["meta_pcb"]="meta_calibration"
+METHOD_NAMES["upr_tta"]="upr_tta"
 
 declare -A METHOD_SUFFIXES
 METHOD_SUFFIXES["freq_aug"]="freq_aug"
@@ -89,10 +92,13 @@ METHOD_SUFFIXES["self_distill"]="self_distill"
 METHOD_SUFFIXES["uncertainty"]="uncertainty"
 METHOD_SUFFIXES["part_graph"]="part_graph"
 METHOD_SUFFIXES["clip"]="clip"
+METHOD_SUFFIXES["pcb_fma"]="pcb_fma"
+METHOD_SUFFIXES["meta_pcb"]="meta_pcb"
+METHOD_SUFFIXES["upr_tta"]="upr_tta"
 
 # Determine which methods to run
 if [ "${METHOD}" = "all" ]; then
-    METHODS="contrastive self_distill uncertainty part_graph clip" # Freq aug is excluded because we already have results from it
+    METHODS="contrastive self_distill uncertainty part_graph clip pcb_fma meta_pcb upr_tta"
 else
     METHODS="${METHOD}"
 fi

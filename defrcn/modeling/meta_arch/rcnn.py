@@ -56,7 +56,17 @@ class GeneralizedRCNN(nn.Module):
         self.branch_adapter = None
         if cfg.MODEL.BRANCH_ADAPTER.ENABLE:
             self.branch_adapter = BranchAdapter(cfg, self._SHAPE_)
+        # Apply batch-agnostic modifications (GN+WS) if enabled
+        if cfg.MODEL.BATCH_AGNOSTIC.ENABLE:
+            from defrcn.modeling.batch_agnostic import apply_batch_agnostic
+            apply_batch_agnostic(self, cfg)
+
         self.to(self.device)
+
+        # Install dynamic GDL if enabled (replaces fixed decouple_layer)
+        if cfg.MODEL.DYNAMIC_GDL.ENABLE:
+            from defrcn.modeling.dynamic_gdl import install_dynamic_gdl
+            install_dynamic_gdl(self, cfg)
 
         if cfg.MODEL.BACKBONE.FREEZE:
             for p in self.backbone.parameters():
@@ -78,6 +88,12 @@ class GeneralizedRCNN(nn.Module):
                 print("froze res5 block parameters (adapters remain trainable)")
             else:
                 print("froze roi_box_head parameters")
+
+        # Freeze dynamic GDL gate during novel fine-tuning
+        if cfg.MODEL.DYNAMIC_GDL.ENABLE and cfg.MODEL.DYNAMIC_GDL.FREEZE_GATE_NOVEL:
+            if cfg.MODEL.BACKBONE.FREEZE:  # novel fine-tuning detected
+                from defrcn.modeling.dynamic_gdl import freeze_dynamic_gdl
+                freeze_dynamic_gdl(self)
 
     def forward(self, batched_inputs):
         if not self.training:

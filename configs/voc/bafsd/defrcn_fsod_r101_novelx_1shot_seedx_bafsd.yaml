@@ -1,0 +1,11 @@
+_BASE_: "../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
+MODEL:
+  BATCH_AGNOSTIC:
+    ENABLE: True
+    GN_NUM_GROUPS: 32
+    WEIGHT_STANDARDIZATION: True
+    CONVERT_1X1: False
+    TASK_ADAPTIVE_NORM: False
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"

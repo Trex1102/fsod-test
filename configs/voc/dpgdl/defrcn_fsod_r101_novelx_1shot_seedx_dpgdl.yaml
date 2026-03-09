@@ -1,0 +1,19 @@
+_BASE_: "../defrcn_fsod_r101_novelx_1shot_seedx.yaml"
+MODEL:
+  RPN:
+    ENABLE_DECOUPLE: False
+    BACKWARD_SCALE: 1.0
+  ROI_HEADS:
+    ENABLE_DECOUPLE: False
+    BACKWARD_SCALE: 1.0
+  DYNAMIC_GDL:
+    ENABLE: True
+    REDUCTION: 16
+    RPN_INIT_LAMBDA: 0.0
+    RCNN_INIT_LAMBDA: 0.75
+    DUAL_PATHWAY: True
+    ORTHO_LOSS_WEIGHT: 0.1
+    FREEZE_GATE_NOVEL: True
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"

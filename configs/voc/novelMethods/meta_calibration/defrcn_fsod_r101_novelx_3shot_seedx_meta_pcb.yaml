@@ -1,0 +1,14 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_3shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: True
+  PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
+NOVEL_METHODS:
+  ENABLE: True
+  METHOD: "meta_pcb"
+  META_PCB:
+    ENABLE: True
+    CALIBRATOR_PATH: ""
+    INPUT_DIM: 8
+    HIDDEN_DIM: 64
+    RESIDUAL_SCALE: 0.1
+    FALLBACK_ALPHA: 0.50

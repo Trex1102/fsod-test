@@ -304,3 +304,76 @@ _CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.TEMPERATURE = 0.5   # Temperature for simil
 _CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.BLEND_WEIGHT = 0.3  # Blend with support prototypes
 _CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.USE_DESCRIPTIONS = True  # Use class descriptions
 _CC.NOVEL_METHODS.BASE_WEIGHT_INTERP.APPLY_TO_PROTOTYPES = True  # Apply to prototypes vs raw weights
+
+# ----- 9) PCB with Foundation Model Alignment (PCB-FMA) ----- #
+# Replaces ImageNet ResNet-101 in PCB with a foundation model (DINOv2)
+# for better prototype features. Inference-only, zero novel-stage params.
+_CC.NOVEL_METHODS.PCB_FMA = CN()
+_CC.NOVEL_METHODS.PCB_FMA.ENABLE = False
+_CC.NOVEL_METHODS.PCB_FMA.FM_MODEL_NAME = "dinov2_vitb14"    # torch.hub model name
+_CC.NOVEL_METHODS.PCB_FMA.FM_MODEL_PATH = ""                 # local path override (empty=use torch.hub)
+_CC.NOVEL_METHODS.PCB_FMA.FM_FEAT_DIM = 768                  # ViT-B/14 embedding dim
+_CC.NOVEL_METHODS.PCB_FMA.ROI_SIZE = 224                      # crop+resize size for FM input
+_CC.NOVEL_METHODS.PCB_FMA.DET_WEIGHT = 0.4                   # detector score weight in fusion
+_CC.NOVEL_METHODS.PCB_FMA.FM_WEIGHT = 0.6                    # FM visual similarity weight
+_CC.NOVEL_METHODS.PCB_FMA.USE_ORIGINAL_PCB = True            # also run original PCB (tri-modal)
+_CC.NOVEL_METHODS.PCB_FMA.ORIGINAL_PCB_WEIGHT = 0.3          # weight for original PCB when tri-modal
+_CC.NOVEL_METHODS.PCB_FMA.BATCH_SIZE = 32                    # batch FM forward passes for speed
+
+# ----- 10) Meta-Learned Calibration (Meta-PCB) ----- #
+# Replaces fixed linear alpha with a small meta-learned calibration network.
+# Trained episodically on base classes, frozen for novel.
+_CC.NOVEL_METHODS.META_PCB = CN()
+_CC.NOVEL_METHODS.META_PCB.ENABLE = False
+_CC.NOVEL_METHODS.META_PCB.CALIBRATOR_PATH = ""              # path to trained calibrator weights
+_CC.NOVEL_METHODS.META_PCB.INPUT_DIM = 8                     # (det_score, cos_sim, 4 support stats, roi_norm, score_entropy)
+_CC.NOVEL_METHODS.META_PCB.HIDDEN_DIM = 64                   # hidden layer size
+_CC.NOVEL_METHODS.META_PCB.RESIDUAL_SCALE = 0.1              # scale for learned correction
+_CC.NOVEL_METHODS.META_PCB.FALLBACK_ALPHA = 0.50             # alpha if calibrator unavailable
+# Meta-training hyperparams (used by tools/meta_train_calibrator.py)
+_CC.NOVEL_METHODS.META_PCB.META_LR = 1e-3
+_CC.NOVEL_METHODS.META_PCB.META_EPISODES = 10000
+_CC.NOVEL_METHODS.META_PCB.META_N_WAY = 5
+_CC.NOVEL_METHODS.META_PCB.META_K_SHOT = 1
+
+# ----- 11) Uncertainty-Guided Prototype Refinement + TTA (UPR-TTA) ----- #
+# MC-Dropout uncertainty for principled pseudo-label selection and
+# adaptive alpha. Improves over fixed-threshold transductive PCB.
+_CC.NOVEL_METHODS.UPR_TTA = CN()
+_CC.NOVEL_METHODS.UPR_TTA.ENABLE = False
+_CC.NOVEL_METHODS.UPR_TTA.NUM_MC_PASSES = 10                 # MC-Dropout forward passes
+_CC.NOVEL_METHODS.UPR_TTA.DROPOUT_RATE = 0.1                 # spatial dropout rate
+_CC.NOVEL_METHODS.UPR_TTA.SCORE_THRESH = 0.5                 # min score for pseudo candidate
+_CC.NOVEL_METHODS.UPR_TTA.UNCERTAINTY_THRESH = 0.05          # max epistemic variance for selection
+_CC.NOVEL_METHODS.UPR_TTA.MAX_PSEUDO_PER_CLASS = 10          # max pseudo-labels per class
+_CC.NOVEL_METHODS.UPR_TTA.PSEUDO_WEIGHT = 0.3                # quality weight for pseudo vs real
+_CC.NOVEL_METHODS.UPR_TTA.ALPHA_BASE = 0.5                   # base alpha for uncertainty-adaptive fusion
+_CC.NOVEL_METHODS.UPR_TTA.UNC_NORM = 0.1                     # uncertainty normalization constant
+_CC.NOVEL_METHODS.UPR_TTA.ENABLE_TTA = False                 # enable test-time adaptation (experimental)
+_CC.NOVEL_METHODS.UPR_TTA.TTA_LR = 0.001                     # TTA learning rate
+_CC.NOVEL_METHODS.UPR_TTA.TTA_MIN_SAMPLES = 3                # min pseudo samples for TTA
+
+# ========== MODEL-LEVEL NOVEL METHODS ========== #
+# These require retraining the base model.
+
+# ----- Batch-Agnostic Few-Shot Detection (BA-FSD) ----- #
+# Replaces BN with GN+WS for batch-size invariance.
+_CC.MODEL.BATCH_AGNOSTIC = CN()
+_CC.MODEL.BATCH_AGNOSTIC.ENABLE = False
+_CC.MODEL.BATCH_AGNOSTIC.GN_NUM_GROUPS = 32
+_CC.MODEL.BATCH_AGNOSTIC.WEIGHT_STANDARDIZATION = True       # use WS on conv layers
+_CC.MODEL.BATCH_AGNOSTIC.CONVERT_1X1 = False                 # also apply WS to 1x1 convs
+_CC.MODEL.BATCH_AGNOSTIC.TASK_ADAPTIVE_NORM = False           # TAN for novel fine-tuning
+_CC.MODEL.BATCH_AGNOSTIC.TAN_BOTTLENECK = 64                 # TAN hypernetwork bottleneck dim
+_CC.MODEL.BATCH_AGNOSTIC.TAN_SUPPORT_DIM = 2048              # TAN support feature dim
+
+# ----- Dynamic Gradient Decoupled Layer (DP-GDL) ----- #
+# Replaces fixed lambda GDL with learned input-dependent gating.
+_CC.MODEL.DYNAMIC_GDL = CN()
+_CC.MODEL.DYNAMIC_GDL.ENABLE = False
+_CC.MODEL.DYNAMIC_GDL.REDUCTION = 16                         # channel attention reduction ratio
+_CC.MODEL.DYNAMIC_GDL.RPN_INIT_LAMBDA = 0.0                  # init gate to match DeFRCN RPN lambda
+_CC.MODEL.DYNAMIC_GDL.RCNN_INIT_LAMBDA = 0.75                # init gate to match DeFRCN RCNN lambda
+_CC.MODEL.DYNAMIC_GDL.DUAL_PATHWAY = True                    # use dual cls/loc pathway
+_CC.MODEL.DYNAMIC_GDL.ORTHO_LOSS_WEIGHT = 0.1                # orthogonality regularization weight
+_CC.MODEL.DYNAMIC_GDL.FREEZE_GATE_NOVEL = True               # freeze gate during novel fine-tuning
