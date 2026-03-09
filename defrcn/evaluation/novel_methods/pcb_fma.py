@@ -78,6 +78,40 @@ class FoundationModelFeatureExtractor:
                                 content = "from __future__ import annotations\n" + content
                                 with open(fpath, "w") as f:
                                     f.write(content)
+                                logger.debug("Patched %s for Python 3.8 compatibility", fpath)
+                    except Exception:
+                        pass
+
+    @staticmethod
+    def _patch_dinov2_for_py38():
+        """Patch cached DINOv2 source files for Python < 3.10 compatibility.
+
+        DINOv2 uses PEP 604 union syntax (float | None) which requires Python 3.10+.
+        This patches the cached files to use Optional[float] instead.
+        """
+        import sys
+        if sys.version_info >= (3, 10):
+            return
+
+        import glob
+        import os
+        hub_dir = torch.hub.get_dir()
+        dinov2_dirs = glob.glob(os.path.join(hub_dir, "facebookresearch_dinov2*"))
+        for d in dinov2_dirs:
+            for root, _, files in os.walk(d):
+                for fname in files:
+                    if not fname.endswith(".py"):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, "r") as f:
+                            content = f.read()
+                        if "float | None" in content or "int | None" in content or "str | None" in content:
+                            # Add from __future__ import annotations at top if not present
+                            if "from __future__ import annotations" not in content:
+                                content = "from __future__ import annotations\n" + content
+                                with open(fpath, "w") as f:
+                                    f.write(content)
                                 logger.info("Patched %s for Python 3.8 compatibility", fpath)
                     except Exception:
                         pass
