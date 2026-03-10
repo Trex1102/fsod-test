@@ -3,15 +3,15 @@
 EXP_NAME=${1:-vanilla_defrcn}
 
 SAVE_DIR=checkpoints/coco/${EXP_NAME}
-IMAGENET_PRETRAIN=/data/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # <-- change it to you path
-IMAGENET_PRETRAIN_TORCH=/data/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to you path
+IMAGENET_PRETRAIN=/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # <-- change it to you path
+IMAGENET_PRETRAIN_TORCH=/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to you path
 
 SHOTS="1 2 3 5 10 30"
 SEED=0
 
 
 # ------------------------------- Base Pre-train ---------------------------------- #
-python3 main.py --num-gpus 8 --config-file configs/coco/defrcn_det_r101_base.yaml \
+python3 main.py --num-gpus 1 --config-file configs/coco/defrcn_det_r101_base.yaml \
     --opts MODEL.WEIGHTS ${IMAGENET_PRETRAIN}                                      \
            OUTPUT_DIR ${SAVE_DIR}/defrcn_det_r101_base
 
