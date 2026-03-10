@@ -320,6 +320,38 @@ _CC.NOVEL_METHODS.PCB_FMA.USE_ORIGINAL_PCB = True            # also run original
 _CC.NOVEL_METHODS.PCB_FMA.ORIGINAL_PCB_WEIGHT = 0.3          # weight for original PCB when tri-modal
 _CC.NOVEL_METHODS.PCB_FMA.BATCH_SIZE = 32                    # batch FM forward passes for speed
 
+# ----- 9b) PCB-FMA with Patch-Level Local Matching (PCB-FMA-Patch) ----- #
+# Uses DINOv2 patch tokens for dense local matching (DN4-style max-pool)
+# instead of CLS-only global matching.  Captures part-level features.
+_CC.NOVEL_METHODS.PCB_FMA_PATCH = CN()
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.ENABLE = False
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.FM_MODEL_NAME = "dinov2_vitb14"
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.FM_MODEL_PATH = ""
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.FM_FEAT_DIM = 768
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.ROI_SIZE = 224
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.DET_WEIGHT = 0.4
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.FM_WEIGHT = 0.6
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.USE_ORIGINAL_PCB = True
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.ORIGINAL_PCB_WEIGHT = 0.3
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.BATCH_SIZE = 32
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.TOP_K_PATCHES = 0            # 0 = max-pool (DN4), >0 = avg top-k
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.BIDIRECTIONAL = False         # bidirectional patch matching
+_CC.NOVEL_METHODS.PCB_FMA_PATCH.CLS_WEIGHT = 0.0             # blend CLS into patch sim (0 = patches only)
+
+# ----- 9c) Negative Prototype Guard (NPG) ----- #
+# Builds FM prototypes for base classes and suppresses false positives
+# that are more similar to base prototypes than novel prototypes.
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD = CN()
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.ENABLE = False
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.MARGIN = 0.05              # base_sim must exceed novel_sim + margin
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.SUPPRESSION_FACTOR = 0.3   # multiply score by this when triggered
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.MAX_BASE_SAMPLES_PER_CLASS = 20  # GT boxes per base class for proto
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.FM_MODEL_NAME = "dinov2_vitb14"  # only used in standalone mode
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.FM_MODEL_PATH = ""
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.FM_FEAT_DIM = 768
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.ROI_SIZE = 224
+_CC.NOVEL_METHODS.NEG_PROTO_GUARD.BATCH_SIZE = 32
+
 # ----- 10) Meta-Learned Calibration (Meta-PCB) ----- #
 # Replaces fixed linear alpha with a small meta-learned calibration network.
 # Trained episodically on base classes, frozen for novel.

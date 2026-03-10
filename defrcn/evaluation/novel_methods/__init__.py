@@ -16,6 +16,8 @@ Methods:
 9. PCB-FMA - Foundation Model Alignment for PCB prototypes (NOVEL)
 10. Meta-PCB - Meta-learned non-linear calibration (NOVEL)
 11. UPR-TTA - Uncertainty-guided Prototype Refinement + TTA (NOVEL)
+12. PCB-FMA-Patch - Patch-level local FM matching (NOVEL)
+13. Negative Prototype Guard - Base-class false positive suppression (NOVEL)
 """
 
 from .frequency_augmentation import (
@@ -94,6 +96,18 @@ from .pcb_fma import (
     build_pcb_fma,
 )
 
+from .pcb_fma_patch import (
+    PatchFeatureExtractor,
+    PCBFMAPatch,
+    build_pcb_fma_patch,
+)
+
+from .negative_proto_guard import (
+    NegativeProtoGuard,
+    build_neg_proto_guard,
+    build_pcb_fma_patch_neg,
+)
+
 from .meta_calibration import (
     MetaCalibrationNet,
     MetaPCB,
@@ -166,6 +180,14 @@ __all__ = [
     "FoundationModelFeatureExtractor",
     "PCBFMA",
     "build_pcb_fma",
+    # PCB-FMA-Patch (NOVEL)
+    "PatchFeatureExtractor",
+    "PCBFMAPatch",
+    "build_pcb_fma_patch",
+    # Negative Prototype Guard (NOVEL)
+    "NegativeProtoGuard",
+    "build_neg_proto_guard",
+    "build_pcb_fma_patch_neg",
     # Meta-PCB (NOVEL)
     "MetaCalibrationNet",
     "MetaPCB",
@@ -212,6 +234,14 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "pcb_fma": build_pcb_fma,
         "fma": build_pcb_fma,
         "foundation_model": build_pcb_fma,
+        "pcb_fma_patch": build_pcb_fma_patch,
+        "fma_patch": build_pcb_fma_patch,
+        "patch_local": build_pcb_fma_patch,
+        "neg_proto_guard": build_neg_proto_guard,
+        "npg": build_neg_proto_guard,
+        "negative_guard": build_neg_proto_guard,
+        "pcb_fma_patch_neg": build_pcb_fma_patch_neg,
+        "fma_patch_neg": build_pcb_fma_patch_neg,
         "meta_pcb": build_meta_pcb,
         "meta_calibration": build_meta_pcb,
         "meta": build_meta_pcb,
