@@ -7,7 +7,7 @@ SAVE_DIR=checkpoints/voc/${EXP_NAME}
 IMAGENET_PRETRAIN=.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # <-- change it to you path
 IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to you path
 
-SHOT=1
+SHOTS="1 2 3 5 10"
 SEED=0
 
 
@@ -25,18 +25,21 @@ BASE_WEIGHT=${SAVE_DIR}/defrcn_det_r101_base${SPLIT_ID}/model_reset_remove.pth
 
 
 # ------------------------------ Novel Fine-tuning -------------------------------- #
-# Rerun only vanilla DeFRCN FSOD 1-shot using base-stage reset weights
-python3 tools/create_config.py --dataset voc --config_root configs/voc \
-    --shot ${SHOT} --seed ${SEED} --setting fsod --split ${SPLIT_ID}
+# Rerun vanilla DeFRCN FSOD across multiple shots using base-stage reset weights
+for SHOT in ${SHOTS}
+do
+    python3 tools/create_config.py --dataset voc --config_root configs/voc \
+        --shot ${SHOT} --seed ${SEED} --setting fsod --split ${SPLIT_ID}
 
-CONFIG_PATH=configs/voc/defrcn_fsod_r101_novel${SPLIT_ID}_${SHOT}shot_seed${SEED}.yaml
-OUTPUT_DIR=${SAVE_DIR}/defrcn_fsod_r101_novel${SPLIT_ID}/${SHOT}shot_seed${SEED}
+    CONFIG_PATH=configs/voc/defrcn_fsod_r101_novel${SPLIT_ID}_${SHOT}shot_seed${SEED}.yaml
+    OUTPUT_DIR=${SAVE_DIR}/defrcn_fsod_r101_novel${SPLIT_ID}/${SHOT}shot_seed${SEED}
 
-python3 main.py --num-gpus 1 --config-file ${CONFIG_PATH}                             \
-    --opts MODEL.WEIGHTS ${BASE_WEIGHT} OUTPUT_DIR ${OUTPUT_DIR}                      \
-           TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
+    python3 main.py --num-gpus 1 --config-file ${CONFIG_PATH}                             \
+        --opts MODEL.WEIGHTS ${BASE_WEIGHT} OUTPUT_DIR ${OUTPUT_DIR}                      \
+               TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
 
-rm ${CONFIG_PATH}
-rm ${OUTPUT_DIR}/model_final.pth
+    rm -f ${CONFIG_PATH}
+    rm -f ${OUTPUT_DIR}/model_final.pth
+done
 
-python3 tools/extract_results.py --res-dir ${SAVE_DIR}/defrcn_fsod_r101_novel${SPLIT_ID} --shot-list ${SHOT}
+python3 tools/extract_results.py --res-dir ${SAVE_DIR}/defrcn_fsod_r101_novel${SPLIT_ID} --shot-list ${SHOTS}
