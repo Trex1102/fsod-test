@@ -71,3 +71,8 @@ chat_context.txt
 fsod_setpu.exit
 
 docs/
+
+datasets/
+transductive_pcb_paper_draft/
+paper/
+analysis/
