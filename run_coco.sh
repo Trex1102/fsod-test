@@ -3,8 +3,8 @@
 EXP_NAME=${1:-vanilla_defrcn}
 
 SAVE_DIR=checkpoints/coco/${EXP_NAME}
-IMAGENET_PRETRAIN=/.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # <-- change it to you path
-IMAGENET_PRETRAIN_TORCH=/.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to you path
+IMAGENET_PRETRAIN=.pretrain_weights/ImageNetPretrained/MSRA/R-101.pkl                            # <-- change it to you path
+IMAGENET_PRETRAIN_TORCH=.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth  # <-- change it to you path
 
 SHOTS="1 2 3 5 10 30"
 SEED=0
