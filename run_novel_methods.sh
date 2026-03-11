@@ -11,7 +11,7 @@
 set -e
 
 SPLIT_ID=$1
-METHOD=${2:-"all"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_fma, meta_pcb, upr_tta
+METHOD=${2:-"pcb_fma_enhanced_neg pcb_fma_enhanced neg_proto_guard"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_fma, meta_pcb, upr_tta
 SHOTS=${3:-"1 2 3 5 10"}
 SEEDS=${4:-"0"}
 RUN_MODE=${5:-"infer_pretrained_novel"}  # finetune, infer_pretrained_novel
@@ -88,9 +88,11 @@ METHOD_NAMES["uncertainty"]="uncertainty_weighting"
 METHOD_NAMES["part_graph"]="part_graph_reasoning"
 METHOD_NAMES["clip"]="clip_grounding"
 METHOD_NAMES["pcb_fma"]="pcb_fma"
+METHOD_NAMES["pcb_fma_enhanced"]="pcb_fma_enhanced"
 METHOD_NAMES["pcb_fma_patch"]="pcb_fma_patch"
 METHOD_NAMES["neg_proto_guard"]="neg_proto_guard"
 METHOD_NAMES["pcb_fma_patch_neg"]="pcb_fma_patch_neg"
+METHOD_NAMES["pcb_fma_enhanced_neg"]="pcb_fma_enhanced_neg"
 METHOD_NAMES["meta_pcb"]="meta_calibration"
 METHOD_NAMES["upr_tta"]="upr_tta"
 
@@ -102,9 +104,11 @@ METHOD_SUFFIXES["uncertainty"]="uncertainty"
 METHOD_SUFFIXES["part_graph"]="part_graph"
 METHOD_SUFFIXES["clip"]="clip"
 METHOD_SUFFIXES["pcb_fma"]="pcb_fma"
+METHOD_SUFFIXES["pcb_fma_enhanced"]="pcb_fma_enhanced"
 METHOD_SUFFIXES["pcb_fma_patch"]="pcb_fma_patch"
 METHOD_SUFFIXES["neg_proto_guard"]="neg_proto_guard"
 METHOD_SUFFIXES["pcb_fma_patch_neg"]="pcb_fma_patch_neg"
+METHOD_SUFFIXES["pcb_fma_enhanced_neg"]="pcb_fma_enhanced_neg"
 METHOD_SUFFIXES["meta_pcb"]="meta_pcb"
 METHOD_SUFFIXES["upr_tta"]="upr_tta"
 

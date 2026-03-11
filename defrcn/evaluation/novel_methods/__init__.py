@@ -106,6 +106,12 @@ from .negative_proto_guard import (
     NegativeProtoGuard,
     build_neg_proto_guard,
     build_pcb_fma_patch_neg,
+    build_pcb_fma_enhanced_neg,
+)
+
+from .pcb_fma_enhanced import (
+    PCBFMAEnhanced,
+    build_pcb_fma_enhanced,
 )
 
 from .meta_calibration import (
@@ -188,6 +194,10 @@ __all__ = [
     "NegativeProtoGuard",
     "build_neg_proto_guard",
     "build_pcb_fma_patch_neg",
+    "build_pcb_fma_enhanced_neg",
+    # PCB-FMA Enhanced (NOVEL)
+    "PCBFMAEnhanced",
+    "build_pcb_fma_enhanced",
     # Meta-PCB (NOVEL)
     "MetaCalibrationNet",
     "MetaPCB",
@@ -234,6 +244,9 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "pcb_fma": build_pcb_fma,
         "fma": build_pcb_fma,
         "foundation_model": build_pcb_fma,
+        "pcb_fma_enhanced": build_pcb_fma_enhanced,
+        "fma_enhanced": build_pcb_fma_enhanced,
+        "enhanced_fma": build_pcb_fma_enhanced,
         "pcb_fma_patch": build_pcb_fma_patch,
         "fma_patch": build_pcb_fma_patch,
         "patch_local": build_pcb_fma_patch,
@@ -242,6 +255,9 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "negative_guard": build_neg_proto_guard,
         "pcb_fma_patch_neg": build_pcb_fma_patch_neg,
         "fma_patch_neg": build_pcb_fma_patch_neg,
+        "pcb_fma_enhanced_neg": build_pcb_fma_enhanced_neg,
+        "fma_enhanced_neg": build_pcb_fma_enhanced_neg,
+        "enhanced_fma_neg": build_pcb_fma_enhanced_neg,
         "meta_pcb": build_meta_pcb,
         "meta_calibration": build_meta_pcb,
         "meta": build_meta_pcb,

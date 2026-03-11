@@ -103,10 +103,31 @@ class NegativeProtoGuard:
         return pcb
 
     def _get_base_class_ids(self) -> List[int]:
-        """Base class IDs are stored in PCB.exclude_cls."""
+        """Derive base class IDs from dataset name.
+
+        The original PCB.exclude_cls is only populated for 'test_all'
+        datasets, so it's empty when testing on 'test_novel'.  We need
+        base class IDs regardless, to build base FM prototypes for the
+        confusion guard.  Derive them from the dataset name instead.
+        """
+        # First try exclude_cls (works for test_all datasets)
         pcb = self._get_base_pcb()
-        if hasattr(pcb, "exclude_cls"):
+        if hasattr(pcb, "exclude_cls") and pcb.exclude_cls:
             return list(pcb.exclude_cls)
+
+        # Derive from dataset name for test_novel datasets
+        dsname = self.cfg.DATASETS.TEST[0]
+        if "voc" in dsname:
+            # VOC: base classes are always IDs 0-14 across all splits
+            return list(range(0, 15))
+        elif "coco" in dsname:
+            # COCO: base class IDs (same as clsid_filter in calibration_layer)
+            return [
+                7, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+                30, 31, 32, 33, 34, 35, 36, 37, 38, 40, 41, 42, 43, 44, 45,
+                46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 59, 61, 63, 64, 65,
+                66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+            ]
         return []
 
     # ------------------------------------------------------------------
@@ -401,5 +422,28 @@ def build_pcb_fma_patch_neg(base_pcb, cfg):
     # Step 2: negative prototype guard (base confusion rejection)
     # Share the PatchFeatureExtractor — NPG only needs CLS tokens from it
     guard = NegativeProtoGuard(patch_pcb, cfg, fm_extractor=patch_pcb.fm_extractor)
+
+    return guard
+
+
+def build_pcb_fma_enhanced_neg(base_pcb, cfg):
+    """PCB-FMA-Enhanced + Negative Prototype Guard (combined).
+
+    Builds PCB-FMA-Enhanced first (augmented prototypes + competitive
+    similarity for novel scoring), then wraps it with NPG (base-class
+    confusion guard).  The DINOv2 model is shared between the two
+    wrappers to avoid loading it twice.
+
+    NPG also reuses the augmented novel prototypes from Enhanced
+    (via fm_prototypes), so the guard benefits from better prototypes.
+    """
+    from .pcb_fma_enhanced import PCBFMAEnhanced
+
+    # Step 1: enhanced FM scoring (augmented protos + competitive similarity)
+    enhanced_pcb = PCBFMAEnhanced(base_pcb, cfg)
+
+    # Step 2: negative prototype guard (base confusion rejection)
+    # Share the FoundationModelFeatureExtractor to avoid loading DINOv2 twice
+    guard = NegativeProtoGuard(enhanced_pcb, cfg, fm_extractor=enhanced_pcb.fm_extractor)
 
     return guard

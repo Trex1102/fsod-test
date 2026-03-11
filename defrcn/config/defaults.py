@@ -352,6 +352,29 @@ _CC.NOVEL_METHODS.NEG_PROTO_GUARD.FM_FEAT_DIM = 768
 _CC.NOVEL_METHODS.NEG_PROTO_GUARD.ROI_SIZE = 224
 _CC.NOVEL_METHODS.NEG_PROTO_GUARD.BATCH_SIZE = 32
 
+# ----- 9d) PCB-FMA Enhanced (Support Aug + Competitive Similarity) ----- #
+# Augments support crops before DINOv2 extraction for more robust prototypes,
+# and uses temperature-scaled softmax across all novel classes for FM similarity.
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED = CN()
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.ENABLE = False
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_MODEL_NAME = "dinov2_vitb14"
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_MODEL_PATH = ""
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_FEAT_DIM = 768
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.ROI_SIZE = 224
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.DET_WEIGHT = 0.4
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_WEIGHT = 0.6
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.USE_ORIGINAL_PCB = True
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.ORIGINAL_PCB_WEIGHT = 0.3
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.BATCH_SIZE = 32
+# Support augmentation
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_FLIP = True              # horizontal flip
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP = True          # multi-scale center crops
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP_SCALES = [0.8, 0.9]  # crop scale ratios
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP_NUM = 2        # crops per scale (1=center, 2=+topleft, 3=+bottomright)
+# Temperature-scaled class-competitive similarity
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.TEMPERATURE = 0.1            # softmax temperature (lower=sharper)
+_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.COMPETITIVE_MODE = "softmax"  # "softmax" or "raw"
+
 # ----- 10) Meta-Learned Calibration (Meta-PCB) ----- #
 # Replaces fixed linear alpha with a small meta-learned calibration network.
 # Trained episodically on base classes, frozen for novel.

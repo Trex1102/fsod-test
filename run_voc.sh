@@ -39,7 +39,7 @@ do
                TEST.PCB_MODELPATH ${IMAGENET_PRETRAIN_TORCH}
 
     rm -f ${CONFIG_PATH}
-    rm -f ${OUTPUT_DIR}/model_final.pth
+    # rm -f ${OUTPUT_DIR}/model_final.pth
 done
 
 python3 tools/extract_results.py --res-dir ${SAVE_DIR}/defrcn_fsod_r101_novel${SPLIT_ID} --shot-list ${SHOTS}
