@@ -23,6 +23,17 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+class _CLIPVisualWrapper(nn.Module):
+    """Wraps a CLIP model to expose only the visual encoder with float32 output."""
+
+    def __init__(self, clip_model):
+        super().__init__()
+        self.clip_model = clip_model
+
+    def forward(self, x):
+        return self.clip_model.encode_image(x).float()
+
+
 class FoundationModelFeatureExtractor:
     """Extracts per-RoI features using a foundation model (DINOv2).
 
@@ -117,39 +128,31 @@ class FoundationModelFeatureExtractor:
                         pass
 
     def _load_model(self, model_name: str, model_path: str):
-        """Load the foundation model."""
+        """Load the foundation model.
+
+        Supports:
+          - dinov2_vits14, dinov2_vitb14, dinov2_vitl14  (facebookresearch/dinov2)
+          - dino_vits16, dino_vitb16                     (facebookresearch/dino)
+          - clip_vitb16, clip_vitb32, clip_vitl14        (openai CLIP visual encoder)
+          - Local model via model_path
+        """
+        # Default: ImageNet normalization (used by DINOv1/v2)
+        self.norm_mean = [0.485, 0.456, 0.406]
+        self.norm_std = [0.229, 0.224, 0.225]
+
         try:
             if model_path:
                 logger.info("Loading foundation model from local path: %s", model_path)
                 self.model = torch.load(model_path, map_location="cpu")
+            elif model_name.startswith("dinov2_"):
+                self._load_dinov2(model_name)
+            elif model_name.startswith("dino_"):
+                self._load_dinov1(model_name)
+            elif model_name.startswith("clip_"):
+                self._load_clip(model_name)
             else:
-                logger.info("Loading foundation model via torch.hub: %s", model_name)
-                # Patch cached DINOv2 source for Python < 3.10 compatibility
-                self._patch_dinov2_for_py38()
-                try:
-                    self.model = torch.hub.load(
-                        "facebookresearch/dinov2",
-                        model_name,
-                        pretrained=True,
-                    )
-                except TypeError as e:
-                    if "unsupported operand type" in str(e):
-                        # First load downloaded repo but failed on PEP 604 syntax.
-                        # Patch and retry.
-                        logger.info("Patching DINOv2 for Python <3.10 compatibility and retrying...")
-                        self._patch_dinov2_for_py38()
-                        # Clear cached modules so patched files are re-imported
-                        import sys as _sys
-                        mods_to_remove = [k for k in _sys.modules if "dinov2" in k]
-                        for k in mods_to_remove:
-                            del _sys.modules[k]
-                        self.model = torch.hub.load(
-                            "facebookresearch/dinov2",
-                            model_name,
-                            pretrained=True,
-                        )
-                    else:
-                        raise
+                # Fallback: try DINOv2
+                self._load_dinov2(model_name)
 
             self.model = self.model.to(self.device)
             self.model.eval()
@@ -174,6 +177,80 @@ class FoundationModelFeatureExtractor:
             logger.warning("Failed to load foundation model '%s': %s. PCB-FMA will fall back to base PCB.", model_name, e)
             self.model = None
 
+    def _load_dinov2(self, model_name: str):
+        """Load DINOv2 model via torch.hub."""
+        logger.info("Loading DINOv2 model via torch.hub: %s", model_name)
+        self._patch_dinov2_for_py38()
+        try:
+            self.model = torch.hub.load(
+                "facebookresearch/dinov2", model_name, pretrained=True,
+            )
+        except TypeError as e:
+            if "unsupported operand type" in str(e):
+                logger.info("Patching DINOv2 for Python <3.10 compatibility and retrying...")
+                self._patch_dinov2_for_py38()
+                import sys as _sys
+                mods_to_remove = [k for k in _sys.modules if "dinov2" in k]
+                for k in mods_to_remove:
+                    del _sys.modules[k]
+                self.model = torch.hub.load(
+                    "facebookresearch/dinov2", model_name, pretrained=True,
+                )
+            else:
+                raise
+
+    def _load_dinov1(self, model_name: str):
+        """Load DINOv1 model via torch.hub (facebookresearch/dino)."""
+        logger.info("Loading DINOv1 model via torch.hub: %s", model_name)
+        self.model = torch.hub.load("facebookresearch/dino:main", model_name)
+
+    def _load_clip(self, model_name: str):
+        """Load CLIP visual encoder. Tries open_clip first, then openai clip."""
+        # Map config names to model identifiers
+        clip_models = {
+            "clip_vitb16": ("ViT-B-16", "ViT-B/16"),
+            "clip_vitb32": ("ViT-B-32", "ViT-B/32"),
+            "clip_vitl14": ("ViT-L-14", "ViT-L/14"),
+        }
+        open_clip_name, openai_clip_name = clip_models.get(
+            model_name, ("ViT-B-16", "ViT-B/16")
+        )
+
+        # CLIP uses different normalization
+        self.norm_mean = [0.48145466, 0.4578275, 0.40821073]
+        self.norm_std = [0.26862954, 0.26130258, 0.27577711]
+
+        loaded = False
+        # Try open_clip first
+        try:
+            import open_clip
+            logger.info("Loading CLIP via open_clip: %s", open_clip_name)
+            clip_model, _, _ = open_clip.create_model_and_transforms(
+                open_clip_name, pretrained="openai"
+            )
+            self.model = _CLIPVisualWrapper(clip_model)
+            loaded = True
+        except ImportError:
+            pass
+
+        if not loaded:
+            # Try openai clip
+            try:
+                import clip
+                logger.info("Loading CLIP via openai/clip: %s", openai_clip_name)
+                clip_model, _ = clip.load(openai_clip_name, device="cpu")
+                self.model = _CLIPVisualWrapper(clip_model)
+                loaded = True
+            except ImportError:
+                pass
+
+        if not loaded:
+            raise ImportError(
+                f"Cannot load CLIP model '{model_name}'. "
+                "Install open_clip (pip install open-clip-torch) or "
+                "openai clip (pip install git+https://github.com/openai/CLIP.git)."
+            )
+
     @property
     def available(self) -> bool:
         return self.model is not None
@@ -181,10 +258,10 @@ class FoundationModelFeatureExtractor:
     def _preprocess_crops(self, crops: List[np.ndarray]) -> torch.Tensor:
         """Preprocess cropped images for the foundation model.
 
-        DINOv2 expects ImageNet-normalized RGB tensors.
+        Uses model-specific normalization (ImageNet for DINOv1/v2, CLIP for CLIP).
         """
-        mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
+        mean = torch.tensor(self.norm_mean, device=self.device).view(1, 3, 1, 1)
+        std = torch.tensor(self.norm_std, device=self.device).view(1, 3, 1, 1)
 
         tensors = []
         for crop in crops:
