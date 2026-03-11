@@ -22,9 +22,9 @@
 #   bash run_all_ablations.sh 1 all "1 5 10" "0"            # All ablations, 3 shots
 # =============================================================================
 
-set -e
+set -euo pipefail
 
-SPLIT_ID=$1
+SPLIT_ID=${1:-""}
 ABLATION=${2:-"all"}
 SEEDS=${4:-"0"}
 
@@ -51,10 +51,22 @@ if [ -z "${SPLIT_ID}" ]; then
     exit 1
 fi
 
+case "${ABLATION}" in
+    component|temperature|fm_arch|augmentation|weights|all)
+        ;;
+    *)
+        echo "Unknown ablation: ${ABLATION}"
+        echo "Valid values: component | temperature | fm_arch | augmentation | weights | all"
+        exit 1
+        ;;
+esac
+
 # ---- Paths ----
 SAVE_DIR=checkpoints/voc/ablations
 IMAGENET_PRETRAIN_TORCH=${IMAGENET_PRETRAIN_TORCH:-.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth}
 PRETRAINED_NOVEL_ROOT=${PRETRAINED_NOVEL_ROOT:-checkpoints/voc/vanilla_defrcn}
+
+mkdir -p "${SAVE_DIR}"
 
 echo "=============================================="
 echo "PCB-FMA Enhanced Ablation Studies"
@@ -214,29 +226,29 @@ if [[ "${ABLATION}" == "component" || "${ABLATION}" == "all" ]]; then
         for seed in ${SEEDS}; do
             echo "  [${shot}-shot, seed ${seed}]"
 
-            # Row 1: Vanilla PCB
-            echo "    Row 1: Vanilla PCB"
-            run_vanilla_pcb_eval "component/vanilla_pcb" ${shot} ${seed}
+            # # Row 1: Vanilla PCB
+            # echo "    Row 1: Vanilla PCB"
+            # run_vanilla_pcb_eval "component/vanilla_pcb" ${shot} ${seed}
 
-            # Row 2: +FM (no aug, raw cosine)
-            echo "    Row 2: +FM"
-            run_enhanced_eval "component/fm_only" ${shot} ${seed} \
-                NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_FLIP False \
-                NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP False \
-                NOVEL_METHODS.PCB_FMA_ENHANCED.COMPETITIVE_MODE raw
+            # # Row 2: +FM (no aug, raw cosine)
+            # echo "    Row 2: +FM"
+            # run_enhanced_eval "component/fm_only" ${shot} ${seed} \
+            #     NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_FLIP False \
+            #     NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP False \
+            #     NOVEL_METHODS.PCB_FMA_ENHANCED.COMPETITIVE_MODE raw
 
             # Row 3: +FM+Aug (aug enabled, raw cosine)
             echo "    Row 3: +FM+Aug"
             run_enhanced_eval "component/fm_aug" ${shot} ${seed} \
                 NOVEL_METHODS.PCB_FMA_ENHANCED.COMPETITIVE_MODE raw
 
-            # Row 4: +FM+Aug+Comp (full Enhanced, default config)
-            echo "    Row 4: +FM+Aug+Comp"
-            run_enhanced_eval "component/fm_aug_comp" ${shot} ${seed}
+            # # Row 4: +FM+Aug+Comp (full Enhanced, default config)
+            # echo "    Row 4: +FM+Aug+Comp"
+            # run_enhanced_eval "component/fm_aug_comp" ${shot} ${seed}
 
-            # Row 5: +FM+Aug+Comp+Guard (Enhanced + NPG)
-            echo "    Row 5: +FM+Aug+Comp+Guard"
-            run_enhanced_neg_eval "component/fm_aug_comp_guard" ${shot} ${seed}
+            # # Row 5: +FM+Aug+Comp+Guard (Enhanced + NPG)
+            # echo "    Row 5: +FM+Aug+Comp+Guard"
+            # run_enhanced_neg_eval "component/fm_aug_comp_guard" ${shot} ${seed}
         done
     done
 
