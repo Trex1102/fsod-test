@@ -18,6 +18,8 @@ Methods:
 11. UPR-TTA - Uncertainty-guided Prototype Refinement + TTA (NOVEL)
 12. PCB-FMA-Patch - Patch-level local FM matching (NOVEL)
 13. Negative Prototype Guard - Base-class false positive suppression (NOVEL)
+14. Cycle-Consistent Correspondence - Multi-support cycle consistency (Direction 3)
+15. Counterfactual Transport - Foreground vs background transport gap (Direction 11)
 """
 
 from .frequency_augmentation import (
@@ -127,6 +129,18 @@ from .upr_tta import (
     build_upr_tta,
 )
 
+from .cycle_consistent_correspondence import (
+    CycleCorrespondenceExtractor,
+    CycleConsistentCorrespondence,
+    build_cycle_consistent_pcb,
+)
+
+from .counterfactual_transport import (
+    CounterfactualTransportExtractor,
+    CounterfactualTransport,
+    build_counterfactual_transport_pcb,
+)
+
 __all__ = [
     # Frequency Augmentation
     "FrequencyAugmentor",
@@ -207,6 +221,14 @@ __all__ = [
     "UncertaintyGuidedPseudoLabeler",
     "UPRTTA",
     "build_upr_tta",
+    # Cycle-Consistent Correspondence (Direction 3)
+    "CycleCorrespondenceExtractor",
+    "CycleConsistentCorrespondence",
+    "build_cycle_consistent_pcb",
+    # Counterfactual Transport (Direction 11)
+    "CounterfactualTransportExtractor",
+    "CounterfactualTransport",
+    "build_counterfactual_transport_pcb",
 ]
 
 def build_novel_method_pcb(base_pcb, cfg, method_name: str):
@@ -264,6 +286,12 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "upr_tta": build_upr_tta,
         "upr": build_upr_tta,
         "uncertainty_refinement": build_upr_tta,
+        "cycle_consistency": build_cycle_consistent_pcb,
+        "cycle_consistent": build_cycle_consistent_pcb,
+        "cycle_corr": build_cycle_consistent_pcb,
+        "counterfactual_transport": build_counterfactual_transport_pcb,
+        "counterfactual": build_counterfactual_transport_pcb,
+        "ct": build_counterfactual_transport_pcb,
     }
     
     method_name_lower = method_name.lower()

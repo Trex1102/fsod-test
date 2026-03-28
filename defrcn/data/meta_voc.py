@@ -1,5 +1,4 @@
 import os
-import hashlib
 import numpy as np
 import xml.etree.ElementTree as ET
 from detectron2.structures import BoxMode
@@ -63,13 +62,8 @@ def load_filtered_voc_instances(
 
                 tree = ET.parse(anno_file)
 
+                instances = []
                 for obj in tree.findall("object"):
-                    r = {
-                        "file_name": jpeg_file,
-                        "image_id": fileid,
-                        "height": int(tree.findall("./size/height")[0].text),
-                        "width": int(tree.findall("./size/width")[0].text),
-                    }
                     cls_ = obj.find("name").text
                     if cls != cls_:
                         continue
@@ -81,22 +75,22 @@ def load_filtered_voc_instances(
                     bbox[0] -= 1.0
                     bbox[1] -= 1.0
 
-                    instances = [
+                    instances.append(
                         {
                             "category_id": classnames.index(cls),
                             "bbox": bbox,
                             "bbox_mode": BoxMode.XYXY_ABS,
                         }
-                    ]
-                    r["annotations"] = instances
+                    )
+                if instances:
+                    r = {
+                        "file_name": jpeg_file,
+                        "image_id": fileid,
+                        "height": int(tree.findall("./size/height")[0].text),
+                        "width": int(tree.findall("./size/width")[0].text),
+                        "annotations": instances,
+                    }
                     dicts_.append(r)
-            if len(dicts_) > int(shot):
-                # Use deterministic, per-dataset/per-class sampling for reproducible few-shot splits.
-                sample_key = "{}|{}|{}|{}".format(name, cls, shot, len(dicts_))
-                sample_seed = int(hashlib.md5(sample_key.encode("utf-8")).hexdigest()[:8], 16)
-                rng = np.random.RandomState(sample_seed)
-                selected = sorted(rng.choice(len(dicts_), int(shot), replace=False).tolist())
-                dicts_ = [dicts_[idx] for idx in selected]
             dicts.extend(dicts_)
     else:
         for fileid in fileids:

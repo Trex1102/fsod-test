@@ -408,6 +408,47 @@ _CC.NOVEL_METHODS.UPR_TTA.ENABLE_TTA = False                 # enable test-time 
 _CC.NOVEL_METHODS.UPR_TTA.TTA_LR = 0.001                     # TTA learning rate
 _CC.NOVEL_METHODS.UPR_TTA.TTA_MIN_SAMPLES = 3                # min pseudo samples for TTA
 
+# ----- 12) Cycle-Consistent Support Correspondence (Direction 3) ----- #
+# Scores proposals by cycle consistency across multiple support exemplars.
+# True objects mediate low-error correspondence cycles s_i -> B -> s_j.
+# Inference-only, zero parameters, training-free.
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY = CN()
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.ENABLE = False
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.FM_MODEL_NAME = "dinov2_vitb14"
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.FM_MODEL_PATH = ""
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.FM_FEAT_DIM = 768
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.ROI_SIZE = 224
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.BATCH_SIZE = 32
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.DET_WEIGHT = 0.4          # detector score weight
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.CYCLE_WEIGHT = 0.6        # cycle consistency weight
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.USE_ORIGINAL_PCB = True   # also run original PCB (tri-modal)
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.ORIGINAL_PCB_WEIGHT = 0.3 # weight for original PCB
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.COVERAGE_ALPHA = 0.3      # weight of coverage vs cycle error
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.COVERAGE_THRESHOLD = 0.3  # cosine sim threshold for coverage
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.CORRESPONDENCE_TEMPERATURE = 0.07  # softmax temperature for soft correspondences
+_CC.NOVEL_METHODS.CYCLE_CONSISTENCY.USE_HARD_CORRESPONDENCE = False    # use hard (argmax) vs soft correspondences
+
+# ----- 13) Foreground by Counterfactual Transport (Direction 11) ----- #
+# Scores proposals by the gap between foreground and background transport costs.
+# True objects: fg explains well (low cost), bg explains poorly (high cost).
+# Inference-only, zero parameters, training-free.
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT = CN()
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.ENABLE = False
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.FM_MODEL_NAME = "dinov2_vitb14"
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.FM_MODEL_PATH = ""
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.FM_FEAT_DIM = 768
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.ROI_SIZE = 224
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.BATCH_SIZE = 32
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.DET_WEIGHT = 0.4          # detector score weight
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.CT_WEIGHT = 0.6           # counterfactual transport weight
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.USE_ORIGINAL_PCB = True   # also run original PCB (tri-modal)
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.ORIGINAL_PCB_WEIGHT = 0.3 # weight for original PCB
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.RING_SCALE = 2.0          # expansion factor for background ring
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.TEMPERATURE = 0.1         # sigmoid temperature for delta->score
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.USE_SINKHORN = False      # use Sinkhorn OT vs greedy NN transport
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.SINKHORN_ITERS = 20       # Sinkhorn iteration count
+_CC.NOVEL_METHODS.COUNTERFACTUAL_TRANSPORT.SINKHORN_REG = 0.05       # entropic regularisation for Sinkhorn
+
 # ========== MODEL-LEVEL NOVEL METHODS ========== #
 # These require retraining the base model.
 

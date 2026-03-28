@@ -32,6 +32,7 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from defrcn.config import get_cfg, set_global_cfg
+from defrcn.data import register_all_coco, register_all_voc  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

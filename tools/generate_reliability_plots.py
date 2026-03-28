@@ -31,8 +31,12 @@ logger = logging.getLogger(__name__)
 
 def load_or_compute_calibration_data(args):
     """Load calibration data from JSON or compute from config."""
-    if args.input and os.path.exists(args.input):
-        with open(args.input) as f:
+    input_path = args.input
+    if isinstance(input_path, (list, tuple)):
+        input_path = input_path[0] if len(input_path) == 1 else None
+
+    if input_path and os.path.exists(input_path):
+        with open(input_path) as f:
             return json.load(f)
 
     if not args.config_file:
