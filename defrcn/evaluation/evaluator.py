@@ -101,6 +101,15 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
             "enhanced_fma_neg",
         ):
             fm_only_method = bool(cfg.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_ONLY)
+        elif method_name_lower in (
+            "pcb_fma_fullimg_patch", "fullimg_patch", "full_image_patch",
+            "pcb_fma_fullimg_patch_neg", "fullimg_patch_neg",
+            "pcb_fma_enhanced_fullimg_patch", "enhanced_fullimg_patch",
+            "pcb_fma_enhanced_fullimg_patch_neg", "enhanced_fullimg_patch_neg",
+            "pcb_fma_enhanced_neg_fullimg_patch", "enhanced_neg_fullimg_patch",
+            "pcb_fma_enhanced_neg_fullimg_patch_neg", "enhanced_neg_fullimg_patch_neg",
+        ):
+            fm_only_method = bool(cfg.NOVEL_METHODS.PCB_FMA_FULLIMG_PATCH.FM_ONLY)
 
         if fm_only_method and method_name:
             logger.info("Initializing FM-only novel method without base PCB/ResNet: %s", method_name)

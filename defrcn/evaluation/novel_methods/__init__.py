@@ -104,10 +104,21 @@ from .pcb_fma_patch import (
     build_pcb_fma_patch,
 )
 
+from .pcb_fma_fullimg_patch import (
+    FullImagePatchFeatureExtractor,
+    PCBFMAFullImagePatch,
+    build_pcb_fma_fullimg_patch,
+    build_pcb_fma_enhanced_fullimg_patch,
+)
+
 from .negative_proto_guard import (
     NegativeProtoGuard,
     build_neg_proto_guard,
     build_pcb_fma_patch_neg,
+    build_pcb_fma_fullimg_patch_neg,
+    build_pcb_fma_enhanced_fullimg_patch_neg,
+    build_pcb_fma_enhanced_neg_fullimg_patch,
+    build_pcb_fma_enhanced_neg_fullimg_patch_neg,
     build_pcb_fma_enhanced_neg,
 )
 
@@ -210,10 +221,18 @@ __all__ = [
     "PatchFeatureExtractor",
     "PCBFMAPatch",
     "build_pcb_fma_patch",
+    "FullImagePatchFeatureExtractor",
+    "PCBFMAFullImagePatch",
+    "build_pcb_fma_fullimg_patch",
+    "build_pcb_fma_enhanced_fullimg_patch",
     # Negative Prototype Guard (NOVEL)
     "NegativeProtoGuard",
     "build_neg_proto_guard",
     "build_pcb_fma_patch_neg",
+    "build_pcb_fma_fullimg_patch_neg",
+    "build_pcb_fma_enhanced_fullimg_patch_neg",
+    "build_pcb_fma_enhanced_neg_fullimg_patch",
+    "build_pcb_fma_enhanced_neg_fullimg_patch_neg",
     "build_pcb_fma_enhanced_neg",
     # PCB-FMA Enhanced (NOVEL)
     "PCBFMAEnhanced",
@@ -287,6 +306,19 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "negative_guard": build_neg_proto_guard,
         "pcb_fma_patch_neg": build_pcb_fma_patch_neg,
         "fma_patch_neg": build_pcb_fma_patch_neg,
+        "pcb_fma_fullimg_patch": build_pcb_fma_fullimg_patch,
+        "fullimg_patch": build_pcb_fma_fullimg_patch,
+        "full_image_patch": build_pcb_fma_fullimg_patch,
+        "pcb_fma_fullimg_patch_neg": build_pcb_fma_fullimg_patch_neg,
+        "fullimg_patch_neg": build_pcb_fma_fullimg_patch_neg,
+        "pcb_fma_enhanced_fullimg_patch": build_pcb_fma_enhanced_fullimg_patch,
+        "enhanced_fullimg_patch": build_pcb_fma_enhanced_fullimg_patch,
+        "pcb_fma_enhanced_fullimg_patch_neg": build_pcb_fma_enhanced_fullimg_patch_neg,
+        "enhanced_fullimg_patch_neg": build_pcb_fma_enhanced_fullimg_patch_neg,
+        "pcb_fma_enhanced_neg_fullimg_patch": build_pcb_fma_enhanced_neg_fullimg_patch,
+        "enhanced_neg_fullimg_patch": build_pcb_fma_enhanced_neg_fullimg_patch,
+        "pcb_fma_enhanced_neg_fullimg_patch_neg": build_pcb_fma_enhanced_neg_fullimg_patch_neg,
+        "enhanced_neg_fullimg_patch_neg": build_pcb_fma_enhanced_neg_fullimg_patch_neg,
         "pcb_fma_enhanced_neg": build_pcb_fma_enhanced_neg,
         "fma_enhanced_neg": build_pcb_fma_enhanced_neg,
         "enhanced_fma_neg": build_pcb_fma_enhanced_neg,

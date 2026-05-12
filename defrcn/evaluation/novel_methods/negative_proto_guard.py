@@ -451,3 +451,65 @@ def build_pcb_fma_enhanced_neg(base_pcb, cfg):
     guard = NegativeProtoGuard(enhanced_pcb, cfg, fm_extractor=enhanced_pcb.fm_extractor)
 
     return guard
+
+
+
+def build_pcb_fma_fullimg_patch_neg(base_pcb, cfg):
+    """Full-image patch RoI FMA + Negative Prototype Guard."""
+    from .pcb_fma import build_fm_only_support
+    from .pcb_fma_fullimg_patch import PCBFMAFullImagePatch
+
+    if base_pcb is None:
+        base_pcb = build_fm_only_support(cfg)
+
+    fullimg_pcb = PCBFMAFullImagePatch(base_pcb, cfg)
+    return NegativeProtoGuard(
+        fullimg_pcb,
+        cfg,
+        fm_extractor=fullimg_pcb.fm_extractor,
+    )
+
+
+
+def build_pcb_fma_enhanced_fullimg_patch_neg(base_pcb, cfg):
+    """PCB-FMA no/aug configuration + full-image patch RoI rescoring + NPG."""
+    from .pcb_fma import build_fm_only_support
+    from .pcb_fma_enhanced import PCBFMAEnhanced
+    from .pcb_fma_fullimg_patch import PCBFMAFullImagePatch
+
+    if base_pcb is None:
+        base_pcb = build_fm_only_support(cfg)
+    enhanced_pcb = PCBFMAEnhanced(base_pcb, cfg)
+    fullimg_pcb = PCBFMAFullImagePatch(enhanced_pcb, cfg)
+    fullimg_pcb.run_inner_first = True
+    return NegativeProtoGuard(
+        fullimg_pcb,
+        cfg,
+        fm_extractor=fullimg_pcb.fm_extractor,
+    )
+
+
+def build_pcb_fma_enhanced_neg_fullimg_patch(base_pcb, cfg):
+    """PCB-FMA no/aug + NPG followed by full-image patch RoI rescoring."""
+    from .pcb_fma import build_fm_only_support
+    from .pcb_fma_enhanced import PCBFMAEnhanced
+    from .pcb_fma_fullimg_patch import PCBFMAFullImagePatch
+
+    if base_pcb is None:
+        base_pcb = build_fm_only_support(cfg)
+    enhanced_pcb = PCBFMAEnhanced(base_pcb, cfg)
+    guard = NegativeProtoGuard(enhanced_pcb, cfg, fm_extractor=enhanced_pcb.fm_extractor)
+    fullimg_pcb = PCBFMAFullImagePatch(guard, cfg)
+    fullimg_pcb.run_inner_first = True
+    return fullimg_pcb
+
+
+def build_pcb_fma_enhanced_neg_fullimg_patch_neg(base_pcb, cfg):
+    """PCB-FMA no/aug + NPG + full-image patch RoI rescoring + final NPG."""
+    fullimg_pcb = build_pcb_fma_enhanced_neg_fullimg_patch(base_pcb, cfg)
+    return NegativeProtoGuard(
+        fullimg_pcb,
+        cfg,
+        fm_extractor=fullimg_pcb.fm_extractor,
+    )
+
