@@ -20,7 +20,7 @@
 set -e
 
 SPLIT_ID=$1
-SHOTS=${2:-"1 2 3 5 10"}
+SHOTS=${2:-"10"}
 SEEDS=${3:-"0"}
 
 if [ -z "${SPLIT_ID}" ]; then

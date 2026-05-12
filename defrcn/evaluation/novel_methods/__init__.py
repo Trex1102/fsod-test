@@ -141,6 +141,12 @@ from .counterfactual_transport import (
     build_counterfactual_transport_pcb,
 )
 
+from .pcb_fma_ring import (
+    PCBFMARingExtractor,
+    PCBFMARing,
+    build_pcb_fma_ring,
+)
+
 __all__ = [
     # Frequency Augmentation
     "FrequencyAugmentor",
@@ -229,6 +235,10 @@ __all__ = [
     "CounterfactualTransportExtractor",
     "CounterfactualTransport",
     "build_counterfactual_transport_pcb",
+    # PCB-FMA-Ring (Direction 12)
+    "PCBFMARingExtractor",
+    "PCBFMARing",
+    "build_pcb_fma_ring",
 ]
 
 def build_novel_method_pcb(base_pcb, cfg, method_name: str):
@@ -292,6 +302,9 @@ def build_novel_method_pcb(base_pcb, cfg, method_name: str):
         "counterfactual_transport": build_counterfactual_transport_pcb,
         "counterfactual": build_counterfactual_transport_pcb,
         "ct": build_counterfactual_transport_pcb,
+        "pcb_fma_ring": build_pcb_fma_ring,
+        "fma_ring": build_pcb_fma_ring,
+        "ring": build_pcb_fma_ring,
     }
     
     method_name_lower = method_name.lower()

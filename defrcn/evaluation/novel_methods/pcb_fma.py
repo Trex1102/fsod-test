@@ -20,6 +20,8 @@ import numpy as np
 import logging
 from typing import Dict, List, Optional, Tuple
 
+from defrcn.dataloader import build_detection_test_loader
+
 logger = logging.getLogger(__name__)
 
 
@@ -322,6 +324,43 @@ class FoundationModelFeatureExtractor:
         return torch.cat(all_features, dim=0)
 
 
+class FMOnlyPCBSupport:
+    """Minimal support context for FM-only PCB-FMA variants."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.device = torch.device(cfg.MODEL.DEVICE)
+        self.pcb_upper = float(cfg.TEST.PCB_UPPER)
+        self.pcb_lower = float(cfg.TEST.PCB_LOWER)
+        self.dataloader = build_detection_test_loader(cfg, cfg.DATASETS.TRAIN[0])
+        self.exclude_cls = self.clsid_filter()
+        self.prototypes = {}
+
+    def clsid_filter(self):
+        dsname = self.cfg.DATASETS.TEST[0]
+        exclude_ids = []
+        if "test_all" in dsname:
+            if "coco" in dsname:
+                exclude_ids = [
+                    7, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+                    30, 31, 32, 33, 34, 35, 36, 37, 38, 40, 41, 42, 43, 44, 45,
+                    46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 59, 61, 63, 64, 65,
+                    66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+                ]
+            elif "voc" in dsname:
+                exclude_ids = list(range(0, 15))
+            else:
+                raise NotImplementedError
+        return exclude_ids
+
+    def execute_calibration(self, inputs, dts, allow_reassign=True):
+        return dts
+
+
+def build_fm_only_support(cfg):
+    return FMOnlyPCBSupport(cfg)
+
+
 class PCBFMA:
     """PCB with Foundation Model Alignment.
 
@@ -501,4 +540,6 @@ class PCBFMA:
 
 def build_pcb_fma(base_pcb, cfg):
     """Factory function to wrap PCB with Foundation Model Alignment."""
+    if base_pcb is None:
+        base_pcb = build_fm_only_support(cfg)
     return PCBFMA(base_pcb, cfg)

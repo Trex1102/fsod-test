@@ -11,7 +11,7 @@
 set -e
 
 SPLIT_ID=$1
-METHOD=${2:-"pcb_fma_enhanced_neg pcb_fma_enhanced neg_proto_guard"}  # all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_fma, meta_pcb, upr_tta
+METHOD=${2:-"pcb_fma_dino_only pcb_fma_enhanced_noaug pcb_fma_enhanced_neg_noaug pcb_fma_enhanced_dino_only pcb_fma_enhanced_neg_dino_only without_pcb"}  # all, without_pcb, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_resnet101, pcb_fma, pcb_fma_dino_only, pcb_fma_enhanced, pcb_fma_enhanced_noaug, pcb_fma_enhanced_dino_only, pcb_fma_enhanced_neg, pcb_fma_enhanced_neg_noaug, pcb_fma_enhanced_neg_dino_only, meta_pcb, upr_tta
 SHOTS=${3:-"1 2 3 5 10"}
 SEEDS=${4:-"0"}
 RUN_MODE=${5:-"infer_pretrained_novel"}  # finetune, infer_pretrained_novel
@@ -21,7 +21,7 @@ show_usage() {
     echo ""
     echo "Arguments:"
     echo "  split_id  : VOC split (1, 2, or 3)"
-    echo "  method    : Method to run (all, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip)"
+    echo "  method    : Method to run (all, without_pcb, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_resnet101, pcb_fma, pcb_fma_dino_only, pcb_fma_enhanced, pcb_fma_enhanced_noaug, pcb_fma_enhanced_dino_only, pcb_fma_enhanced_neg, pcb_fma_enhanced_neg_noaug, pcb_fma_enhanced_neg_dino_only, neg_proto_guard, meta_pcb, upr_tta)"
     echo "  shots     : Shot settings (default: \"2 3 5 10\")"
     echo "  seeds     : Random seeds (default: \"0\")"
     echo "  run_mode  : finetune or infer_pretrained_novel (default: \"finetune\")"
@@ -48,6 +48,9 @@ fi
 EXP_NAME=voc_novel_methods
 SAVE_DIR=checkpoints/voc/${EXP_NAME}
 IMAGENET_PRETRAIN_TORCH=${IMAGENET_PRETRAIN_TORCH:-.pretrain_weights/ImageNetPretrained/torchvision/resnet101-5d3b4d8f.pth}
+if [ ! -f "${IMAGENET_PRETRAIN_TORCH}" ] && [ -f "${IMAGENET_PRETRAIN_TORCH%.pth}" ]; then
+    IMAGENET_PRETRAIN_TORCH="${IMAGENET_PRETRAIN_TORCH%.pth}"
+fi
 
 # Base model weights (from vanilla DeFRCN base training)
 BASE_WEIGHT_DIR=${BASE_WEIGHT_DIR:-checkpoints/voc/vanilla_defrcn/defrcn_det_r101_base${SPLIT_ID}}
@@ -81,40 +84,68 @@ esac
 
 # Method configurations
 declare -A METHOD_NAMES
+METHOD_NAMES["without_pcb"]="without_pcb"
 METHOD_NAMES["freq_aug"]="frequency_augmentation"
 METHOD_NAMES["contrastive"]="contrastive_anchoring"
 METHOD_NAMES["self_distill"]="self_distillation"
 METHOD_NAMES["uncertainty"]="uncertainty_weighting"
 METHOD_NAMES["part_graph"]="part_graph_reasoning"
 METHOD_NAMES["clip"]="clip_grounding"
+METHOD_NAMES["pcb_resnet101"]="pcb_resnet101"
 METHOD_NAMES["pcb_fma"]="pcb_fma"
+METHOD_NAMES["pcb_fma_dino_only"]="pcb_fma_dino_only"
 METHOD_NAMES["pcb_fma_enhanced"]="pcb_fma_enhanced"
+METHOD_NAMES["pcb_fma_enhanced_noaug"]="pcb_fma_enhanced_noaug"
+METHOD_NAMES["pcb_fma_enhanced_dino_only"]="pcb_fma_enhanced_dino_only"
 METHOD_NAMES["pcb_fma_patch"]="pcb_fma_patch"
 METHOD_NAMES["neg_proto_guard"]="neg_proto_guard"
 METHOD_NAMES["pcb_fma_patch_neg"]="pcb_fma_patch_neg"
 METHOD_NAMES["pcb_fma_enhanced_neg"]="pcb_fma_enhanced_neg"
+METHOD_NAMES["pcb_fma_enhanced_neg_noaug"]="pcb_fma_enhanced_neg_noaug"
+METHOD_NAMES["pcb_fma_enhanced_neg_dino_only"]="pcb_fma_enhanced_neg_dino_only"
 METHOD_NAMES["meta_pcb"]="meta_calibration"
 METHOD_NAMES["upr_tta"]="upr_tta"
 
 declare -A METHOD_SUFFIXES
+METHOD_SUFFIXES["without_pcb"]="without_pcb"
 METHOD_SUFFIXES["freq_aug"]="freq_aug"
 METHOD_SUFFIXES["contrastive"]="contrastive"
 METHOD_SUFFIXES["self_distill"]="self_distill"
 METHOD_SUFFIXES["uncertainty"]="uncertainty"
 METHOD_SUFFIXES["part_graph"]="part_graph"
 METHOD_SUFFIXES["clip"]="clip"
+METHOD_SUFFIXES["pcb_resnet101"]="pcb_resnet101"
 METHOD_SUFFIXES["pcb_fma"]="pcb_fma"
+METHOD_SUFFIXES["pcb_fma_dino_only"]="pcb_fma_dino_only"
 METHOD_SUFFIXES["pcb_fma_enhanced"]="pcb_fma_enhanced"
+METHOD_SUFFIXES["pcb_fma_enhanced_noaug"]="pcb_fma_enhanced_noaug"
+METHOD_SUFFIXES["pcb_fma_enhanced_dino_only"]="pcb_fma_enhanced_dino_only"
 METHOD_SUFFIXES["pcb_fma_patch"]="pcb_fma_patch"
 METHOD_SUFFIXES["neg_proto_guard"]="neg_proto_guard"
 METHOD_SUFFIXES["pcb_fma_patch_neg"]="pcb_fma_patch_neg"
 METHOD_SUFFIXES["pcb_fma_enhanced_neg"]="pcb_fma_enhanced_neg"
+METHOD_SUFFIXES["pcb_fma_enhanced_neg_noaug"]="pcb_fma_enhanced_neg_noaug"
+METHOD_SUFFIXES["pcb_fma_enhanced_neg_dino_only"]="pcb_fma_enhanced_neg_dino_only"
 METHOD_SUFFIXES["meta_pcb"]="meta_pcb"
 METHOD_SUFFIXES["upr_tta"]="upr_tta"
 
+declare -A METHOD_TEMPLATE_DIRS
+METHOD_TEMPLATE_DIRS["pcb_fma_dino_only"]="pcb_fma"
+METHOD_TEMPLATE_DIRS["pcb_fma_enhanced_noaug"]="pcb_fma_enhanced"
+METHOD_TEMPLATE_DIRS["pcb_fma_enhanced_dino_only"]="pcb_fma_enhanced"
+METHOD_TEMPLATE_DIRS["pcb_fma_enhanced_neg_noaug"]="pcb_fma_enhanced_neg"
+METHOD_TEMPLATE_DIRS["pcb_fma_enhanced_neg_dino_only"]="pcb_fma_enhanced_neg"
+
+declare -A METHOD_TEMPLATE_SUFFIXES
+METHOD_TEMPLATE_SUFFIXES["pcb_fma_dino_only"]="pcb_fma"
+METHOD_TEMPLATE_SUFFIXES["pcb_fma_enhanced_noaug"]="pcb_fma_enhanced"
+METHOD_TEMPLATE_SUFFIXES["pcb_fma_enhanced_dino_only"]="pcb_fma_enhanced"
+METHOD_TEMPLATE_SUFFIXES["pcb_fma_enhanced_neg_noaug"]="pcb_fma_enhanced_neg"
+METHOD_TEMPLATE_SUFFIXES["pcb_fma_enhanced_neg_dino_only"]="pcb_fma_enhanced_neg"
+
 # Determine which methods to run
 if [ "${METHOD}" = "all" ]; then
-    METHODS="contrastive self_distill uncertainty part_graph clip pcb_fma meta_pcb upr_tta"
+    METHODS="without_pcb contrastive self_distill uncertainty part_graph clip pcb_resnet101 pcb_fma pcb_fma_dino_only pcb_fma_enhanced pcb_fma_enhanced_noaug pcb_fma_enhanced_dino_only neg_proto_guard pcb_fma_enhanced_neg pcb_fma_enhanced_neg_noaug pcb_fma_enhanced_neg_dino_only meta_pcb upr_tta"
 else
     METHODS="${METHOD}"
 fi
@@ -140,7 +171,7 @@ for method in ${METHODS}; do
     
     if [ -z "${METHOD_DIR}" ]; then
         echo "Unknown method: ${method}"
-        echo "Available: freq_aug, contrastive, self_distill, uncertainty, part_graph, clip"
+        echo "Available: without_pcb, freq_aug, contrastive, self_distill, uncertainty, part_graph, clip, pcb_resnet101, pcb_fma, pcb_fma_dino_only, pcb_fma_enhanced, pcb_fma_enhanced_noaug, pcb_fma_enhanced_dino_only, pcb_fma_enhanced_neg, pcb_fma_enhanced_neg_noaug, pcb_fma_enhanced_neg_dino_only, neg_proto_guard, meta_pcb, upr_tta"
         exit 1
     fi
     
@@ -196,11 +227,14 @@ for method in ${METHODS}; do
                 --shot ${shot} --seed ${seed} --setting fsod --split ${SPLIT_ID}
             
             # Template config path
-            TEMPLATE_CONFIG=configs/voc/novelMethods/${METHOD_DIR}/defrcn_fsod_r101_novelx_${shot}shot_seedx_${METHOD_SUFFIX}.yaml
+            TEMPLATE_DIR=${METHOD_TEMPLATE_DIRS[$method]:-${METHOD_DIR}}
+            TEMPLATE_SUFFIX=${METHOD_TEMPLATE_SUFFIXES[$method]:-${METHOD_SUFFIX}}
+            TEMPLATE_CONFIG=configs/voc/novelMethods/${TEMPLATE_DIR}/defrcn_fsod_r101_novelx_${shot}shot_seedx_${TEMPLATE_SUFFIX}.yaml
             
             # Create seed-specific config
             CONFIG_PATH=configs/voc/novelMethods/${METHOD_DIR}/defrcn_fsod_r101_novel${SPLIT_ID}_${shot}shot_seed${seed}_${METHOD_SUFFIX}.yaml
             
+            mkdir -p configs/voc/novelMethods/${METHOD_DIR}
             cp ${TEMPLATE_CONFIG} ${CONFIG_PATH}
             sed -i "s/novelx/novel${SPLIT_ID}/g" ${CONFIG_PATH}
             sed -i "s/seedx/seed${seed}/g" ${CONFIG_PATH}
@@ -212,6 +246,26 @@ for method in ${METHODS}; do
             if [ -n "${CALIBRATOR_PATH}" ]; then
                 EXTRA_OPTS+=(NOVEL_METHODS.META_PCB.CALIBRATOR_PATH "${CALIBRATOR_PATH}")
             fi
+            case "${method}" in
+                pcb_fma_dino_only)
+                    EXTRA_OPTS+=(
+                        NOVEL_METHODS.PCB_FMA.USE_ORIGINAL_PCB False
+                        NOVEL_METHODS.PCB_FMA.FM_ONLY True
+                    )
+                    ;;
+                pcb_fma_enhanced_noaug|pcb_fma_enhanced_neg_noaug)
+                    EXTRA_OPTS+=(
+                        NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_FLIP False
+                        NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP False
+                    )
+                    ;;
+                pcb_fma_enhanced_dino_only|pcb_fma_enhanced_neg_dino_only)
+                    EXTRA_OPTS+=(
+                        NOVEL_METHODS.PCB_FMA_ENHANCED.USE_ORIGINAL_PCB False
+                        NOVEL_METHODS.PCB_FMA_ENHANCED.FM_ONLY True
+                    )
+                    ;;
+            esac
 
             if [ "${RUN_MODE}" = "infer_pretrained_novel" ]; then
                 MODEL_WEIGHT=${PRETRAINED_NOVEL_ROOT}/split${SPLIT_ID}/${shot}shot_seed${seed}/model_final.pth

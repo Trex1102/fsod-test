@@ -4,11 +4,11 @@ TEST:
   PCB_MODELPATH: "/Path/to/ImageNet/Pre-Train/Weight"
 NOVEL_METHODS:
   ENABLE: True
-  METHOD: "freq_aug"
-  FREQ_AUG:
+  METHOD: "meta_pcb"
+  META_PCB:
     ENABLE: True
-    LOW_FREQ_RATIO: 0.3
-    HIGH_FREQ_RATIO: 0.3
-    NUM_AUGMENTED: 3
-    MIX_ALPHA: 0.5
-    PRESERVE_NORM: True
+    CALIBRATOR_PATH: ""
+    INPUT_DIM: 8
+    HIDDEN_DIM: 64
+    RESIDUAL_SCALE: 0.1
+    FALLBACK_ALPHA: 0.50

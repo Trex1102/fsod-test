@@ -1,0 +1,5 @@
+_BASE_: "../../defrcn_fsod_r101_novelx_5shot_seedx.yaml"
+TEST:
+  PCB_ENABLE: False
+NOVEL_METHODS:
+  ENABLE: False

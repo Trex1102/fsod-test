@@ -396,7 +396,7 @@ class CycleConsistentCorrespondence:
         if len(supports) < 2:
             # Single support: can't compute cycle, fall back to coverage only
             if len(supports) == 1:
-                sim = supports[0] @ query_patches.T  # (N_s, N_B)
+                sim = supports[0].to(query_patches.device) @ query_patches.T  # (N_s, N_B)
                 cov = float((sim.max(dim=1).values > self.coverage_threshold).float().mean().item())
                 return 0.5, cov  # Neutral cycle score
             return 0.0, 0.0

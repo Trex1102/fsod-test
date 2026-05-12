@@ -4,8 +4,8 @@ Direction 11: Foreground by Counterfactual Transport (query-side background).
 The question: "can this proposal be explained away by its own local context?"
 For each query proposal we compare two transport costs in DINOv2 patch space:
 
-  fg_cost = average over support instances of transport(query, support_i_patches)
-  bg_cost = transport(query, ring patches from the same query image)
+  fg_cost = how well the support fg patches cover the query proposal
+  bg_cost = how well the query's own ring patches cover the query proposal
 
 The background is taken from the SAME query image (ring around the proposal),
 not from support images. This ensures the counterfactual is same-domain and
@@ -14,28 +14,20 @@ support class, or like the surrounding context in this specific scene?"
 
 Mathematical core:
   For proposal B with patch set P_B (DINOv2 patches of the crop):
-    P_fg_i  = DINOv2 patches of support instance i's GT crop
+    P_fg    = support foreground patches (from support GT crops)
     P_ring  = DINOv2 patches of the ring around B in the query image
               (expanded box minus the inner proposal area)
 
   Transport is query-centric (B as source):
-    fg_cost_i = mean_p ( min_f  dist(p, f) )   p in P_B, f in P_fg_i
-    fg_cost   = mean_i ( fg_cost_i )            averaged over support instances
-    bg_cost   = mean_p ( min_r  dist(p, r) )   p in P_B, r in P_ring
+    fg_cost = mean_p ( min_f  dist(p, f) )   p in P_B, f in P_fg
+    bg_cost = mean_p ( min_r  dist(p, r) )   p in P_B, r in P_ring
 
     Delta(B) = bg_cost - fg_cost
 
-  Averaging fg_cost over support instances (rather than pooling all patches
-  into one bank) prevents a query proposal from earning a low fg_cost by
-  matching a single outlier patch in one support image.  A true foreground
-  proposal must be consistently similar across support instances; a false
-  positive that happens to share texture with one support image will have
-  high fg_cost for the other support instances, keeping the mean high.
-
   Large Delta:
-    every proposal patch finds close support-fg matches consistently across
-    all support instances (fg_cost low) AND is far from the local ring
-    context (bg_cost high) => proposal is genuine foreground.
+    every proposal patch finds a close support-fg match (fg_cost low)
+    AND is far from the local ring context (bg_cost high)
+    => proposal is genuine foreground, not a background region.
 
   Final score:
     fused = w_d * det_score + w_ct * sigmoid(delta / temperature) + w_pcb * pcb_sim
@@ -50,13 +42,16 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class CounterfactualTransportExtractor:
-    """Extracts DINOv2 patch tokens for counterfactual transport computation."""
+    """Extracts DINOv2 patch tokens for counterfactual transport computation.
+
+    Self-contained DINOv2 loader following the established pattern.
+    """
 
     def __init__(
         self,
@@ -79,6 +74,7 @@ class CounterfactualTransportExtractor:
 
     @staticmethod
     def _patch_dinov2_for_py38():
+        """Patch cached DINOv2 source files for Python < 3.10 compatibility."""
         import sys
         if sys.version_info >= (3, 10):
             return
@@ -104,6 +100,7 @@ class CounterfactualTransportExtractor:
                         pass
 
     def _load_model(self, model_name: str, model_path: str):
+        """Load the DINOv2 model."""
         try:
             if model_path:
                 logger.info("Loading counterfactual FM from local path: %s", model_path)
@@ -135,7 +132,9 @@ class CounterfactualTransportExtractor:
 
             with torch.no_grad():
                 dummy = torch.randn(1, 3, self.roi_size, self.roi_size, device=self.device)
-                out = self.model.get_intermediate_layers(dummy, n=1, return_class_token=True)
+                out = self.model.get_intermediate_layers(
+                    dummy, n=1, return_class_token=True,
+                )
                 patch_tokens, cls_token = out[0]
                 actual_dim = cls_token.shape[-1]
                 actual_patches = patch_tokens.shape[1]
@@ -164,18 +163,22 @@ class CounterfactualTransportExtractor:
         return self.model is not None
 
     def _preprocess_crops(self, crops: List[np.ndarray]) -> torch.Tensor:
+        """Preprocess cropped images for DINOv2 (ImageNet normalisation)."""
         mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
+
         tensors = []
         for crop in crops:
             resized = cv2.resize(crop, (self.roi_size, self.roi_size))
             t = torch.from_numpy(resized[:, :, ::-1].copy()).permute(2, 0, 1).float() / 255.0
             tensors.append(t)
+
         batch = torch.stack(tensors, dim=0).to(self.device)
         batch = (batch - mean) / std
         return batch
 
     def _crop_rois(self, img: np.ndarray, boxes_tensor: torch.Tensor) -> List[np.ndarray]:
+        """Crop RoIs from the image."""
         boxes = boxes_tensor.cpu().numpy()
         img_h, img_w = img.shape[:2]
         crops = []
@@ -201,10 +204,12 @@ class CounterfactualTransportExtractor:
         """
         if not self.available:
             return None
+
         if boxes_tensor.numel() == 0:
             return torch.empty((0, self.num_patches, self.feat_dim), device=self.device)
 
         crops = self._crop_rois(img, boxes_tensor)
+
         all_patches = []
         with torch.no_grad():
             for start in range(0, len(crops), self.batch_size):
@@ -215,10 +220,12 @@ class CounterfactualTransportExtractor:
                 )
                 patch_tokens, _ = out[0]
                 all_patches.append(patch_tokens)
+
         return torch.cat(all_patches, dim=0)
 
 
 def _expand_box(box: np.ndarray, scale: float, img_h: int, img_w: int) -> np.ndarray:
+    """Expand a box [x1,y1,x2,y2] by a scale factor, clipping to image bounds."""
     x1, y1, x2, y2 = box
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
@@ -232,12 +239,12 @@ def _expand_box(box: np.ndarray, scale: float, img_h: int, img_w: int) -> np.nda
 
 
 class CounterfactualTransport:
-    """Foreground by Counterfactual Transport with per-support-instance fg averaging.
+    """Foreground by Counterfactual Transport.
 
-    fg_cost is computed as the mean of per-support-instance transport costs.
-    This ensures a proposal must be consistently similar to the class across
-    ALL support instances, not just one — preventing false positives from
-    cherry-picking a single matching patch in a large concatenated fg bank.
+    Scores proposals by the gap between foreground and background transport
+    costs. True objects have low foreground transport cost and high background
+    transport cost (large positive Delta). Background/partial proposals are
+    well-explained by background patches, yielding small or negative Delta.
     """
 
     def __init__(self, base_pcb, cfg):
@@ -267,6 +274,7 @@ class CounterfactualTransport:
             if self.use_original_pcb:
                 self.original_pcb_weight /= total
 
+        # Load DINOv2
         self.fm_extractor = CounterfactualTransportExtractor(
             model_name=str(ct_cfg.FM_MODEL_NAME),
             model_path=str(ct_cfg.FM_MODEL_PATH),
@@ -276,28 +284,60 @@ class CounterfactualTransport:
             device=str(cfg.MODEL.DEVICE),
         )
 
-        # Per-class fg bank: List of per-support-instance patch tensors.
-        # fg_patches[cls] = [Tensor(256, D), Tensor(256, D), ...]  — one per support instance.
-        # fg_cost is averaged over this list at inference, preventing cherry-picking.
-        self.fg_patches: Dict[int, List[torch.Tensor]] = {}
+        # Per-class foreground patch bank (background is query-side, built at inference)
+        self.fg_patches: Dict[int, torch.Tensor] = {}   # cls -> (N_fg, D) normalised
 
         if self.fm_extractor.available:
-            self._build_fg_representations()
+            self._build_fg_bg_representations()
         else:
             logger.warning("Counterfactual Transport: FM not available, falling back to base PCB.")
 
-    # ------------------------------------------------------------------
-    # Support-set fg bank
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _ring_patch_mask(
+        fg_box: np.ndarray, expanded_box: np.ndarray, n_patches_side: int,
+    ) -> torch.Tensor:
+        """Return a boolean mask of patches in the expanded crop that are OUTSIDE the fg box.
 
-    def _build_fg_representations(self):
-        """Build per-class, per-support-instance fg patch banks.
+        Args:
+            fg_box: [x1, y1, x2, y2] original foreground box in image coords.
+            expanded_box: [x1, y1, x2, y2] expanded (ring) crop in image coords.
+            n_patches_side: number of patches per side (e.g. 16 for 224/14).
 
-        Each support GT box contributes one (num_patches, D) tensor to its
-        class list. At inference, fg_cost is averaged over these tensors so
-        the query must match the class consistently, not just one instance.
+        Returns:
+            mask: (n_patches_side**2,) bool tensor, True = ring patch (keep for bg).
         """
-        logger.info("Counterfactual Transport: Building per-instance fg patch banks...")
+        ex1, ey1, ex2, ey2 = expanded_box
+        fx1, fy1, fx2, fy2 = fg_box
+
+        exp_w = max(ex2 - ex1, 1e-6)
+        exp_h = max(ey2 - ey1, 1e-6)
+
+        # Fg box in normalised expanded-crop coordinates [0, 1]
+        rel_x1 = (fx1 - ex1) / exp_w
+        rel_y1 = (fy1 - ey1) / exp_h
+        rel_x2 = (fx2 - ex1) / exp_w
+        rel_y2 = (fy2 - ey1) / exp_h
+
+        N = n_patches_side
+        keep = []
+        for r in range(N):
+            for c in range(N):
+                # Patch centre in normalised coords
+                pc_x = (c + 0.5) / N
+                pc_y = (r + 0.5) / N
+                in_fg = (rel_x1 <= pc_x <= rel_x2) and (rel_y1 <= pc_y <= rel_y2)
+                keep.append(not in_fg)
+
+        return torch.tensor(keep, dtype=torch.bool)
+
+    def _build_fg_bg_representations(self):
+        """Build per-class foreground patch banks from the support set.
+
+        Background is no longer modelled from support images. Instead, at
+        inference time the ring around each query proposal serves as the
+        per-image background, making the counterfactual genuinely same-domain.
+        """
+        logger.info("Counterfactual Transport: Building fg patch banks from support set...")
 
         class_fg: Dict[int, List[torch.Tensor]] = {}
 
@@ -307,6 +347,7 @@ class CounterfactualTransport:
             img = cv2.imread(inputs[0]["file_name"])
             if img is None:
                 continue
+
             inst = inputs[0]["instances"]
             if len(inst) == 0:
                 continue
@@ -325,78 +366,78 @@ class CounterfactualTransport:
                 cls = int(labels[i].item())
                 if cls not in class_fg:
                     class_fg[cls] = []
-                # Store each support instance separately — (num_patches, D)
                 class_fg[cls].append(F.normalize(fg_tokens[i], dim=1))
 
-        self.fg_patches = class_fg
+        for cls, patches in class_fg.items():
+            self.fg_patches[cls] = torch.cat(patches, dim=0)
 
         logger.info(
-            "Counterfactual Transport: Built fg for %d classes (%s instances each)",
+            "Counterfactual Transport: Built fg for %d classes (fg patches: %s)",
             len(self.fg_patches),
-            {c: len(v) for c, v in self.fg_patches.items()},
+            {c: int(v.shape[0]) for c, v in self.fg_patches.items()},
         )
 
-    # ------------------------------------------------------------------
-    # Ring mask
-    # ------------------------------------------------------------------
+    def _transport_cost(
+        self, source: torch.Tensor, target: torch.Tensor,
+    ) -> float:
+        """Compute transport cost from source measure to target measure.
 
-    @staticmethod
-    def _ring_patch_mask(
-        fg_box: np.ndarray, expanded_box: np.ndarray, n_patches_side: int,
-    ) -> torch.Tensor:
-        """Boolean mask of patches in the expanded crop that are OUTSIDE the fg box."""
-        ex1, ey1, ex2, ey2 = expanded_box
-        fx1, fy1, fx2, fy2 = fg_box
+        Uses either Sinkhorn OT or greedy nearest-neighbor transport.
 
-        exp_w = max(ex2 - ex1, 1e-6)
-        exp_h = max(ey2 - ey1, 1e-6)
+        Args:
+            source: (N_s, D) L2-normalised source patches.
+            target: (N_t, D) L2-normalised target patches.
 
-        rel_x1 = (fx1 - ex1) / exp_w
-        rel_y1 = (fy1 - ey1) / exp_h
-        rel_x2 = (fx2 - ex1) / exp_w
-        rel_y2 = (fy2 - ey1) / exp_h
-
-        N = n_patches_side
-        keep = []
-        for r in range(N):
-            for c in range(N):
-                pc_x = (c + 0.5) / N
-                pc_y = (r + 0.5) / N
-                in_fg = (rel_x1 <= pc_x <= rel_x2) and (rel_y1 <= pc_y <= rel_y2)
-                keep.append(not in_fg)
-        return torch.tensor(keep, dtype=torch.bool)
-
-    # ------------------------------------------------------------------
-    # Transport cost
-    # ------------------------------------------------------------------
-
-    def _transport_cost(self, source: torch.Tensor, target: torch.Tensor) -> float:
-        """Query-centric greedy (or Sinkhorn) transport cost."""
+        Returns:
+            Scalar transport cost (lower = better match).
+        """
         if source.shape[0] == 0 or target.shape[0] == 0:
             return float("inf")
 
-        cost = 1.0 - (source @ target.T)  # (N_s, N_t) cosine distance
+        # Cost matrix: 1 - cosine_similarity (so 0 = identical, 2 = opposite)
+        cost = 1.0 - (source @ target.T)  # (N_s, N_t)
 
         if self.use_sinkhorn:
             return self._sinkhorn_cost(cost)
-        return float(cost.min(dim=1).values.mean().item())
+        else:
+            return self._greedy_transport_cost(cost)
+
+    def _greedy_transport_cost(self, cost: torch.Tensor) -> float:
+        """Simple greedy transport: each source patch maps to its nearest target.
+
+        Returns mean of minimum costs (average nearest-neighbor distance).
+        """
+        # For each source patch, find minimum cost to any target patch
+        min_costs = cost.min(dim=1).values  # (N_s,)
+        return float(min_costs.mean().item())
 
     def _sinkhorn_cost(self, cost: torch.Tensor) -> float:
+        """Sinkhorn optimal transport cost with entropic regularisation.
+
+        Solves: min_T sum(T * C) + reg * sum(T * log(T))
+        subject to T1 = a, T^T 1 = b (uniform marginals).
+        """
         n_s, n_t = cost.shape
         reg = max(self.sinkhorn_reg, 1e-4)
+
+        # Uniform marginals
         a = torch.ones(n_s, device=cost.device) / n_s
         b = torch.ones(n_t, device=cost.device) / n_t
+
+        # Gibbs kernel
         K = torch.exp(-cost / reg)
+
         u = torch.ones(n_s, device=cost.device)
         for _ in range(self.sinkhorn_iters):
             v = b / (K.T @ u + 1e-8)
             u = a / (K @ v + 1e-8)
-        T = u.unsqueeze(1) * K * v.unsqueeze(0)
-        return float(torch.sum(T * cost).item())
 
-    # ------------------------------------------------------------------
-    # Counterfactual gap
-    # ------------------------------------------------------------------
+        # Transport plan
+        T = u.unsqueeze(1) * K * v.unsqueeze(0)
+
+        # Transport cost
+        ot_cost = float(torch.sum(T * cost).item())
+        return ot_cost
 
     def _compute_counterfactual_gap(
         self,
@@ -404,30 +445,46 @@ class CounterfactualTransport:
         ring_patches: torch.Tensor,
         cls: int,
     ) -> float:
-        """Delta(B) = bg_cost - mean_i(fg_cost_i).
+        """Compute the query-side counterfactual transport gap.
 
-        fg_cost is averaged over all support instances for cls.
-        This requires the query to match fg consistently across instances,
-        not just cherry-pick a single patch from a large pooled bank.
+        Delta(B) = cost(B -> bg_ring) - cost(B -> fg_support)
+
+        where:
+          B        = query proposal patches (source for both transports)
+          bg_ring  = DINOv2 patches from the ring around the query proposal
+                     (local context from the SAME query image)
+          fg_support = DINOv2 patches from the support GT boxes
+
+        Transport is query-centric: for each query patch we find its
+        nearest patch in the target set. This answers "can every part
+        of the proposal be covered by fg (or bg)?"
+
+        Large positive Delta:
+          query patches are far from the local ring (not background)
+          AND close to support fg (looks like the class)
+          => true foreground proposal.
         """
         if cls not in self.fg_patches or ring_patches.shape[0] == 0:
             return 0.0
 
         dev = query_patches.device
+        fg = self.fg_patches[cls].to(dev)
 
-        # Average transport cost over each support instance's patch set
-        fg_costs = [
-            self._transport_cost(query_patches, fg_bank.to(dev))
-            for fg_bank in self.fg_patches[cls]
-        ]
-        fg_cost = float(np.mean(fg_costs))
+        # Query-centric: query patches are the source
+        fg_cost = self._transport_cost(query_patches, fg)
         bg_cost = self._transport_cost(query_patches, ring_patches)
 
         return float(bg_cost - fg_cost)
 
     def _delta_to_score(self, delta: float) -> float:
+        """Map the counterfactual gap to a [0, 1] score via sigmoid.
+
+        score = sigmoid(delta / temperature)
+        """
         temp = max(self.temperature, 1e-6)
-        x = max(-20.0, min(20.0, delta / temp))
+        x = delta / temp
+        # Clamp to avoid overflow
+        x = max(-20.0, min(20.0, x))
         return 1.0 / (1.0 + np.exp(-x))
 
     # ------------------------------------------------------------------
@@ -435,7 +492,14 @@ class CounterfactualTransport:
     # ------------------------------------------------------------------
 
     def execute_calibration(self, inputs, dts):
-        """Calibrate proposals using per-instance-averaged counterfactual transport."""
+        """Execute calibration with query-side counterfactual transport scoring.
+
+        For each candidate proposal the background measure is the ring of
+        patches immediately surrounding that proposal in the SAME query image.
+        This ensures the counterfactual comparison is always same-domain:
+        "does this proposal look more like the support class, or like its
+        own local context?"
+        """
         if not self.fm_extractor.available or not self.fg_patches:
             return self.base_pcb.execute_calibration(inputs, dts)
 
@@ -465,10 +529,10 @@ class CounterfactualTransport:
         box_tensor = pred_boxes.tensor
         boxes_np = box_tensor.cpu().numpy()
 
-        # One batched DINOv2 pass for all proposal crops
+        # Extract patch tokens for all candidate proposals (one batched DINOv2 pass)
         query_all_patches = self.fm_extractor.extract_patch_tokens(img, box_tensor)
 
-        # One batched DINOv2 pass for all ring crops
+        # Extract patch tokens for all candidate ring boxes (one batched DINOv2 pass)
         ring_boxes_np = np.array([
             _expand_box(boxes_np[j], self.ring_scale, img_h, img_w)
             for j in range(len(boxes_np))
@@ -476,6 +540,7 @@ class CounterfactualTransport:
         ring_boxes_tensor = torch.tensor(ring_boxes_np, dtype=torch.float32)
         ring_all_patches = self.fm_extractor.extract_patch_tokens(img, ring_boxes_tensor)
 
+        # Base PCB features (optional additional channel)
         if self.use_original_pcb:
             boxes = [pred_boxes.to(self.base_pcb.device)]
             pcb_features = self.base_pcb.extract_roi_features(img, boxes)
@@ -491,13 +556,15 @@ class CounterfactualTransport:
             q_idx = i - ileft
             det_score = float(scores[i].item())
 
-            ct_sim = 0.5
+            # ----- Query-side counterfactual transport score -----
+            ct_sim = 0.5  # neutral default
             if (cls in self.fg_patches
                     and query_all_patches is not None
                     and ring_all_patches is not None):
 
                 q_patches = F.normalize(query_all_patches[q_idx].to(dev), dim=1)
 
+                # Ring patches: only those outside the proposal box
                 ring_mask = self._ring_patch_mask(
                     boxes_np[q_idx], ring_boxes_np[q_idx], n_patches_side,
                 )
@@ -507,6 +574,7 @@ class CounterfactualTransport:
                 delta = self._compute_counterfactual_gap(q_patches, ring_patches, cls)
                 ct_sim = self._delta_to_score(delta)
 
+            # ----- Original PCB similarity (optional) -----
             pcb_sim = 0.0
             if self.use_original_pcb and cls in self.base_pcb.prototypes:
                 proto_bank = self.base_pcb._select_proto_bank(
@@ -518,6 +586,7 @@ class CounterfactualTransport:
                     )
                     pcb_sim = (pcb_sim + 1.0) / 2.0
 
+            # ----- Fusion -----
             if self.use_original_pcb:
                 fused = (
                     self.det_weight * det_score
@@ -533,8 +602,10 @@ class CounterfactualTransport:
         return dts
 
     def __getattr__(self, name):
+        """Delegate all other attributes to base PCB."""
         return getattr(self.base_pcb, name)
 
 
 def build_counterfactual_transport_pcb(base_pcb, cfg):
+    """Factory function to wrap PCB with counterfactual transport scoring."""
     return CounterfactualTransport(base_pcb, cfg)

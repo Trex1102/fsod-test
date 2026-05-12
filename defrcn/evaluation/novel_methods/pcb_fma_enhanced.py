@@ -355,4 +355,7 @@ class PCBFMAEnhanced:
 
 def build_pcb_fma_enhanced(base_pcb, cfg):
     """Factory function to wrap PCB with enhanced FMA (Support Aug + Competitive Sim)."""
+    if base_pcb is None:
+        from .pcb_fma import build_fm_only_support
+        base_pcb = build_fm_only_support(cfg)
     return PCBFMAEnhanced(base_pcb, cfg)

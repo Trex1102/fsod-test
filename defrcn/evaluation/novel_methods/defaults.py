@@ -319,7 +319,6 @@ _CC.NOVEL_METHODS.PCB_FMA.FM_WEIGHT = 0.6                    # FM visual similar
 _CC.NOVEL_METHODS.PCB_FMA.USE_ORIGINAL_PCB = True            # also run original PCB (tri-modal)
 _CC.NOVEL_METHODS.PCB_FMA.ORIGINAL_PCB_WEIGHT = 0.3          # weight for original PCB when tri-modal
 _CC.NOVEL_METHODS.PCB_FMA.BATCH_SIZE = 32                    # batch FM forward passes for speed
-_CC.NOVEL_METHODS.PCB_FMA.FM_ONLY = False                    # skip base PCB/ResNet and use only the FM path
 
 # ----- 9b) PCB-FMA with Patch-Level Local Matching (PCB-FMA-Patch) ----- #
 # Uses DINOv2 patch tokens for dense local matching (DN4-style max-pool)
@@ -367,7 +366,6 @@ _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_WEIGHT = 0.6
 _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.USE_ORIGINAL_PCB = True
 _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.ORIGINAL_PCB_WEIGHT = 0.3
 _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.BATCH_SIZE = 32
-_CC.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_ONLY = False           # skip base PCB/ResNet and use only the FM path
 # Support augmentation
 _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_FLIP = True              # horizontal flip
 _CC.NOVEL_METHODS.PCB_FMA_ENHANCED.AUG_MULTICROP = True          # multi-scale center crops

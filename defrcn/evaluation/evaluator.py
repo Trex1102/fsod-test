@@ -87,12 +87,30 @@ def inference_on_dataset(model, data_loader, evaluator, cfg=None):
 
     pcb = None
     if cfg.TEST.PCB_ENABLE:
-        logger.info("Start initializing PCB module, please wait a seconds...")
-        pcb = PrototypicalCalibrationBlock(cfg)
+        method_name = cfg.NOVEL_METHODS.METHOD if cfg.NOVEL_METHODS.ENABLE and cfg.NOVEL_METHODS.METHOD else ""
+        method_name_lower = method_name.lower() if method_name else ""
+        fm_only_method = False
+        if method_name_lower in ("pcb_fma", "fma", "foundation_model"):
+            fm_only_method = bool(cfg.NOVEL_METHODS.PCB_FMA.FM_ONLY)
+        elif method_name_lower in (
+            "pcb_fma_enhanced",
+            "fma_enhanced",
+            "enhanced_fma",
+            "pcb_fma_enhanced_neg",
+            "fma_enhanced_neg",
+            "enhanced_fma_neg",
+        ):
+            fm_only_method = bool(cfg.NOVEL_METHODS.PCB_FMA_ENHANCED.FM_ONLY)
+
+        if fm_only_method and method_name:
+            logger.info("Initializing FM-only novel method without base PCB/ResNet: %s", method_name)
+            pcb = build_novel_method_pcb(None, cfg, method_name)
+        else:
+            logger.info("Start initializing PCB module, please wait a seconds...")
+            pcb = PrototypicalCalibrationBlock(cfg)
 
         # Wrap PCB with novel method if enabled
-        if cfg.NOVEL_METHODS.ENABLE and cfg.NOVEL_METHODS.METHOD:
-            method_name = cfg.NOVEL_METHODS.METHOD
+        if pcb is not None and not fm_only_method and method_name:
             logger.info(f"Applying novel method: {method_name}")
             pcb = build_novel_method_pcb(pcb, cfg, method_name)
 

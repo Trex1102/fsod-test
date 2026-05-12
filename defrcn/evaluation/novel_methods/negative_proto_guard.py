@@ -437,7 +437,11 @@ def build_pcb_fma_enhanced_neg(base_pcb, cfg):
     NPG also reuses the augmented novel prototypes from Enhanced
     (via fm_prototypes), so the guard benefits from better prototypes.
     """
+    from .pcb_fma import build_fm_only_support
     from .pcb_fma_enhanced import PCBFMAEnhanced
+
+    if base_pcb is None:
+        base_pcb = build_fm_only_support(cfg)
 
     # Step 1: enhanced FM scoring (augmented protos + competitive similarity)
     enhanced_pcb = PCBFMAEnhanced(base_pcb, cfg)
